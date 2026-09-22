@@ -1,0 +1,80 @@
+# ============================================================
+# Grafana Loki：日志聚合（单体模式 + MinIO 对象存储）
+#
+# 启动：docker compose -f docker-compose.loki.yml up -d
+# 采集：docker compose -f docker-compose.loki.yml --profile logs up -d
+# 停止：docker compose -f docker-compose.loki.yml down
+#
+# 可视化（可选，另起 Grafana）：
+#   docker compose -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
+# ============================================================
+name: obs-stack
+
+services:
+  minio:
+    image: minio/minio:${MINIO_VERSION:-latest}
+    container_name: obs-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"     # S3 API
+      - "9002:9001"     # Console（宿主 9001 预留给 ClickHouse native）
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./data/minio:/data
+    networks: [obs]
+
+  # 一次性任务：创建 Loki 所需的 bucket（loki-data）
+  minio-init:
+    image: minio/mc:latest
+    container_name: obs-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} >/dev/null 2>&1; do sleep 2; done;
+      mc mb --ignore-existing local/loki-data;
+      echo 'bucket loki-data ready';
+      "
+    networks: [obs]
+
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.7.7}
+    container_name: obs-loki
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    command: -config.file=/etc/loki/config.yml -config.expand-env=true
+    ports:
+      - "3100:3100"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./config/loki-config.yml:/etc/loki/config.yml:ro
+      - ./data/loki:/loki
+    networks: [obs]
+
+  # Promtail 已于 2026-03 停止维护，官方继任者为 Grafana Alloy。
+  alloy:
+    image: grafana/alloy:latest
+    container_name: obs-alloy
+    profiles: ["logs"]
+    restart: unless-stopped
+    depends_on:
+      - loki
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./config/alloy.config.alloy:/etc/alloy/config.alloy:ro
+      - ./data/host-logs:/var/log/host:ro
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

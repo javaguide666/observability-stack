@@ -1,0 +1,18 @@
+# Grafana 自动配置：ClickHouse 数据源
+# 未启动 ClickHouse 时该数据源会显示异常，不影响 Loki 使用。
+# 密码与 ClickHouse 容器环境变量一致（见 .env / docker-compose.clickhouse.yml）。
+apiVersion: 1
+
+datasources:
+  - name: ClickHouse
+    type: clickhouse
+    uid: clickhouse
+    access: proxy
+    url: http://clickhouse:8123
+    user: default
+    jsonData:
+      defaultDatabase: default
+      protocol: http
+      username: default
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD

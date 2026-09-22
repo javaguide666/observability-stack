@@ -1,0 +1,16 @@
+# ============================================================
+# 开发数据栈：MySQL + Redis + Nacos + PostgreSQL + ClickHouse
+#
+# 启动：docker compose -f docker-compose.all.yml up -d
+# 停止：docker compose -f docker-compose.all.yml down
+#
+# SkyWalking / Loki / Grafana / Jenkins 请用各自的 docker-compose.<组件>.yml
+# ============================================================
+name: obs-stack
+
+include:
+  - docker-compose.mysql.yml
+  - docker-compose.redis.yml
+  - docker-compose.nacos.yml
+  - docker-compose.postgres.yml
+  - docker-compose.clickhouse.yml

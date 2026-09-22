@@ -1,0 +1,38 @@
+# ============================================================
+# Redis 8.10 GA：缓存 / 锁
+#
+# 启动：docker compose -f docker-compose.redis.yml up -d
+# 停止：docker compose -f docker-compose.redis.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  redis:
+    image: redis:${REDIS_VERSION:-8.10.1}
+    container_name: obs-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-Admin13278@} --appendonly yes
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-Admin13278@}
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

@@ -1,0 +1,38 @@
+# ============================================================
+# ClickHouse：指标 / 日志分析库
+#
+# 启动：docker compose -f docker-compose.clickhouse.yml up -d
+# 停止：docker compose -f docker-compose.clickhouse.yml down
+#
+# 可视化（可选，另起 Grafana）：
+#   docker compose -f docker-compose.clickhouse.yml -f docker-compose.grafana.yml up -d
+# ============================================================
+name: obs-stack
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8}
+    container_name: obs-clickhouse
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - "8123:8123"     # HTTP
+      - "9001:9000"     # Native（宿主 9001，避开 MinIO 的 9000 / 9001）
+    environment:
+      # 25.x 未设密码时会禁止 default 远程登录，客户端会报 Code 194
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-Admin13278}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-wealth_freedom_olap}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/clickhouse/data:/var/lib/clickhouse
+      - ./config/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

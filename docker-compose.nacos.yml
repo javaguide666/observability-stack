@@ -1,0 +1,64 @@
+# ============================================================
+# Nacos 3.2.4 GA：单机 + 已有 MySQL（无 db-init、无开机自启）
+#
+# 先起 MySQL，再起本文件；或直接用 docker-compose.all.yml
+#   docker compose -f docker-compose.mysql.yml up -d
+#   docker compose -f docker-compose.nacos.yml up -d
+# 停止：docker compose -f docker-compose.nacos.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  nacos:
+    image: nacos/nacos-server:${NACOS_VERSION:-v3.2.4-slim}
+    container_name: obs-nacos
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+        required: false
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_USER: nacos
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_NACOS_PASSWORD:-Admin13278@}
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=10000&socketTimeout=30000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-nacos_identity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-nacos_value}
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+      JVM_XMN: 256m
+    ports:
+      - "8080:8080"   # Web 控制台（与 SkyWalking UI 互斥，按需只起一个）
+      - "8848:8848"   # 客户端 HTTP
+      - "9848:9848"   # 客户端 gRPC
+      - "9849:9849"   # 服务端 gRPC
+    volumes:
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/nacos/data:/home/nacos/data
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/nacos/logs:/home/nacos/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8848'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

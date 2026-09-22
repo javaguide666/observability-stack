@@ -1,0 +1,33 @@
+# ============================================================
+# Grafana：统一查询 UI（Loki / ClickHouse 数据源按已启动的组件生效）
+#
+# 单独启动（需已有 Loki 或 ClickHouse，否则对应数据源会显示异常）：
+#   docker compose -f docker-compose.grafana.yml up -d
+#
+# 与 Loki 一起：
+#   docker compose -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
+# ============================================================
+name: obs-stack
+
+services:
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-latest}
+    container_name: obs-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-Admin13278}
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./data/grafana:/var/lib/grafana
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

@@ -1,0 +1,42 @@
+# ============================================================
+# PostgreSQL 18：可选主库（wealth-freedom DB_TYPE=postgresql）
+#
+# 启动：docker compose -f docker-compose.postgres.yml up -d
+# 停止：docker compose -f docker-compose.postgres.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-18.6-alpine}
+    container_name: obs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Admin13278@}
+      POSTGRES_DB: ${POSTGRES_DB:-myapp_db}
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      # PG 18+ 必须挂载到 /var/lib/postgresql（不是 /data）
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/postgres/data:/var/lib/postgresql
+      - ./config/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-myapp_db} -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    shm_size: 256mb
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

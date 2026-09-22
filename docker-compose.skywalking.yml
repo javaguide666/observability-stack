@@ -1,0 +1,66 @@
+# ============================================================
+# SkyWalking：链路追踪 / 服务指标
+# BanyanDB 0.10.0 + OAP / UI 10.4.0
+#
+# 启动：docker compose -f docker-compose.skywalking.yml up -d
+# 停止：docker compose -f docker-compose.skywalking.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  banyandb:
+    image: apache/skywalking-banyandb:${BANYANDB_VERSION:-0.10.0}
+    container_name: obs-banyandb
+    restart: unless-stopped
+    command: standalone --stream-root-path /root/banyandb/stream --measure-root-path /root/banyandb/measure
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:17913/api/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "17912:17912"   # gRPC（OAP 连接）
+      - "17913:17913"   # HTTP / Web UI
+    volumes:
+      - ./data/banyandb:/root/banyandb
+    networks: [obs]
+
+  oap:
+    image: apache/skywalking-oap-server:${SW_VERSION:-10.4.0}
+    container_name: obs-oap
+    restart: unless-stopped
+    depends_on:
+      banyandb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/12800' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    ports:
+      - "11800:11800"   # Agent gRPC
+      - "12800:12800"   # 查询 HTTP
+    environment:
+      SW_STORAGE: banyandb
+      SW_STORAGE_BANYANDB_TARGETS: banyandb:17912
+      JAVA_OPTS: -Xms512m -Xmx2g -XX:MaxDirectMemorySize=512m
+    networks: [obs]
+
+  ui:
+    image: apache/skywalking-ui:${SW_VERSION:-10.4.0}
+    container_name: obs-ui
+    restart: unless-stopped
+    depends_on:
+      oap:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SW_OAP_ADDRESS: http://oap:12800
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

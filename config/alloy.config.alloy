@@ -1,0 +1,14 @@
+// Grafana Alloy 日志采集示例：读取 ./data/host-logs 下的 *.log 并推送 Loki
+// 使用方式：docker compose --profile logs up -d
+loki.source.file "host_logs" {
+  targets = [
+    {__path__ = "/var/log/host/*.log", job = "host"},
+  ]
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
