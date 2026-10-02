@@ -1,0 +1,140 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>Wealth Freedom CI/CD：分支/SHA 构建部署，或按 IMAGE_TAG 回滚（默认 overlay=dev；Job 历史 numToKeep=20）</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>MODE</name>
+          <description>build-deploy=拉码构建部署；rollback=仅按 IMAGE_TAG 回滚（不构建）</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>build-deploy</string>
+              <string>rollback</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>OVERLAY</name>
+          <description>K8s kustomize overlay</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>dev</string>
+              <string>test</string>
+              <string>prod</string>
+              <string>local</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>SOURCE</name>
+          <description>github=clone/fetch（分支/SHA 生效）；local-mount=用 /gitee 挂载仓</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>github</string>
+              <string>local-mount</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>IMAGE_TAG</name>
+          <description>镜像 tag。build-deploy 时空/local/auto → 自动 branch-shortsha；rollback 必填历史 tag</description>
+          <defaultValue>auto</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BRANCH_FREEDOM</name>
+          <defaultValue>main</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BRANCH_WEB</name>
+          <defaultValue>main</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BRANCH_MALL</name>
+          <defaultValue>main</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_SHA_FREEDOM</name>
+          <description>可选：wealth-freedom 完整/短 SHA（7+）；空=分支 tip</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_SHA_WEB</name>
+          <description>可选：wealth-freedom-web SHA；空=分支 tip</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_SHA_MALL</name>
+          <description>可选：wealth-ecommerce-web SHA；空=分支 tip</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>SKIP_MVN</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>SKIP_FRONT</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: '20')) }
+  stages {
+    stage('CI + CD') {
+      steps {
+        sh '''
+          set -euo pipefail
+          export MODE="${MODE}"
+          export OVERLAY="${OVERLAY}"
+          export SOURCE="${SOURCE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          export BRANCH_FREEDOM="${BRANCH_FREEDOM}"
+          export BRANCH_WEB="${BRANCH_WEB}"
+          export BRANCH_MALL="${BRANCH_MALL}"
+          export GIT_SHA_FREEDOM="${GIT_SHA_FREEDOM:-}"
+          export GIT_SHA_WEB="${GIT_SHA_WEB:-}"
+          export GIT_SHA_MALL="${GIT_SHA_MALL:-}"
+          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] &amp;&amp; echo 1 || echo 0)"
+          export SKIP_FRONT="$([ "${SKIP_FRONT}" = "true" ] &amp;&amp; echo 1 || echo 0)"
+          export WORKSPACE_ROOT="${WORKSPACE}/repos"
+          export JAVA_HOME=/opt/java/jdk-25
+          export PATH="$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH"
+          if [[ -x /jenkins-backup/scripts/pipeline-wealth.sh ]]; then
+            /jenkins-backup/scripts/pipeline-wealth.sh
+          else
+            chmod +x jenkins/scripts/pipeline-wealth.sh
+            ./jenkins/scripts/pipeline-wealth.sh
+          fi
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        def tagFile = "${env.WORKSPACE}/.wealth-image-tag"
+        if (fileExists(tagFile)) {
+          currentBuild.description = "MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${readFile(tagFile).trim()}"
+        }
+      }
+    }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

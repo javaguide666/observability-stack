@@ -1,0 +1,45 @@
+# ============================================================
+# Jenkins LTS + Wealth CI 工具（docker/kubectl/mvn/jdk25）
+# 启动：docker compose -f docker-compose.jenkins.yml up -d --build
+# 控制台：http://localhost:18080
+# Pipeline 备份：./jenkins/
+# ============================================================
+name: obs-stack
+
+services:
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    image: wealth-jenkins:lts-ci
+    container_name: obs-jenkins
+    restart: unless-stopped
+    privileged: true
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_HOME: /opt/java/jdk-25
+      PATH: /opt/java/jdk-25/bin:/opt/maven/bin:/usr/local/bin:/opt/java/openjdk/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    ports:
+      - "18080:8080"
+      - "50000:50000"
+    volumes:
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/jenkins/home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.kube:/var/jenkins_home/.kube:ro
+      - ${HOME}/.ssh:/var/jenkins_home/.ssh:ro
+      - ./jenkins:/jenkins-backup:ro
+      # 可选：直接挂本机三仓，Pipeline 也可 git clone
+      - ${HOME}/gitee:/gitee:rw
+    group_add:
+      - "0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

@@ -1,0 +1,53 @@
+// 通用单模块模板：Job 需提供参数 MODULE，或在调用前 export MODULE=...
+pipeline {
+  agent any
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+  parameters {
+    choice(name: 'MODULE', choices: ['gateway', 'auth', 'system-server', 'admin-server', 'ecommerce-server', 'freedom-web', 'ecommerce-web'], description: '要构建/回滚的模块')
+    choice(name: 'MODE', choices: ['build-deploy', 'rollback'], description: 'build-deploy / rollback')
+    choice(name: 'OVERLAY', choices: ['dev', 'test', 'prod', 'local'], description: 'K8s / Desktop overlay')
+    choice(name: 'SOURCE', choices: ['github', 'local-mount'], description: '代码来源')
+    string(name: 'REGISTRY', defaultValue: '', description: '测试/生产仓库前缀，本机留空')
+    string(name: 'IMAGE_TAG', defaultValue: 'auto', description: 'auto 或历史 tag')
+    string(name: 'BRANCH', defaultValue: 'main', description: '本模块仓库分支')
+    string(name: 'GIT_SHA', defaultValue: '', description: '可选 SHA；空=分支 tip')
+    booleanParam(name: 'SKIP_MVN', defaultValue: false, description: '仅 Java 模块有效：跳过 Maven')
+  }
+  environment {
+    WORKSPACE_ROOT = "${env.WORKSPACE}/repos"
+  }
+  stages {
+    stage('CI + CD') {
+      steps {
+        sh '''
+          set -euo pipefail
+          export MODULE="${MODULE}"
+          export MODE="${MODE}"
+          export OVERLAY="${OVERLAY}"
+          export SOURCE="${SOURCE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          export REGISTRY="${REGISTRY:-}"
+          export BRANCH="${BRANCH}"
+          export GIT_SHA="${GIT_SHA:-}"
+          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] && echo 1 || echo 0)"
+          export WORKSPACE_ROOT="${WORKSPACE_ROOT}"
+          bash /jenkins-backup/scripts/pipeline-wealth-module.sh
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        def tagFile = '.wealth-image-tag'
+        if (fileExists(tagFile)) {
+          currentBuild.description = "MODULE=${params.MODULE} MODE=${params.MODE} IMAGE_TAG=${readFile(tagFile).trim()}"
+        }
+      }
+    }
+  }
+}

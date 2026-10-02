@@ -1,0 +1,54 @@
+// 单模块 Job 模板：MODULE=gateway → pipeline-wealth-module.sh
+// Job 类型可用「Pipeline script」粘贴，或 SCM 指向本文件
+pipeline {
+  agent any
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+  parameters {
+    choice(name: 'MODE', choices: ['build-deploy', 'rollback'], description: 'build-deploy / rollback')
+    choice(name: 'OVERLAY', choices: ['dev', 'test', 'prod', 'local'], description: 'K8s / Desktop overlay')
+    choice(name: 'SOURCE', choices: ['github', 'local-mount'], description: '代码来源')
+    string(name: 'REGISTRY', defaultValue: '', description: '测试/生产仓库前缀，本机留空')
+    string(name: 'IMAGE_TAG', defaultValue: 'auto', description: 'auto 或历史 tag')
+    string(name: 'BRANCH', defaultValue: 'main', description: 'wealth-freedom 分支')
+    string(name: 'GIT_SHA', defaultValue: '', description: '可选 SHA；空=分支 tip')
+    booleanParam(name: 'SKIP_MVN', defaultValue: false, description: '跳过 Maven（仅重打镜像）')
+  }
+  environment {
+    WORKSPACE_ROOT = "${env.WORKSPACE}/repos"
+    MODULE = 'gateway'
+  }
+  stages {
+    stage('CI + CD') {
+      steps {
+        sh '''
+          set -euo pipefail
+          export MODULE="gateway"
+          export MODE="${MODE}"
+          export OVERLAY="${OVERLAY}"
+          export SOURCE="${SOURCE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          export REGISTRY="${REGISTRY:-}"
+          export BRANCH="${BRANCH}"
+          export GIT_SHA="${GIT_SHA:-}"
+          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] && echo 1 || echo 0)"
+          export WORKSPACE_ROOT="${WORKSPACE_ROOT}"
+          bash /jenkins-backup/scripts/pipeline-wealth-module.sh
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        def tagFile = '.wealth-image-tag'
+        if (fileExists(tagFile)) {
+          currentBuild.description = "MODULE=gateway MODE=${params.MODE} IMAGE_TAG=${readFile(tagFile).trim()}"
+        }
+      }
+    }
+  }
+}

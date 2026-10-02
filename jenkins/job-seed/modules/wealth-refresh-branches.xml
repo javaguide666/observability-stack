@@ -1,0 +1,47 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>刷新三仓远程分支到本地缓存，并更新各模块 Job 的 BRANCH 下拉。打开构建页不再每次访问 GitHub。</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>-1</daysToKeep>
+        <numToKeep>20</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+        <removeLastBuild>false</removeLastBuild>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+      <abortPrevious>false</abortPrevious>
+    </org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;20&apos;)) }
+  stages {
+    stage(&apos;Refresh branch cache&apos;) {
+      steps {
+        sh &apos;&apos;&apos;
+          set -euo pipefail
+          export JENKINS_HOME_JOBS=/var/jenkins_home/jobs
+          export GITEE_FREEDOM=/gitee/wealth-freedom
+          export GITEE_WEB=/gitee/wealth-freedom-web
+          export GITEE_MALL=/gitee/wealth-ecommerce-web
+          bash /jenkins-backup/scripts/refresh-branch-cache.sh
+        &apos;&apos;&apos;
+      }
+    }
+  }
+  post {
+    success { echo &apos;分支缓存已更新。请重新打开各模块 Build with Parameters 查看 BRANCH 下拉。&apos; }
+    failure { echo &apos;失败时检查：github-ssh / 容器内 SSH 私钥、网络、/gitee 挂载&apos; }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

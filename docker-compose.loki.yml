@@ -1,5 +1,5 @@
 # ============================================================
-# Grafana Loki：日志聚合（单体模式 + MinIO 对象存储）
+# Grafana Loki：日志聚合（单体模式 + RustFS 对象存储）
 #
 # 启动：docker compose -f docker-compose.loki.yml up -d
 # 采集：docker compose -f docker-compose.loki.yml --profile logs up -d
@@ -11,33 +11,47 @@
 name: obs-stack
 
 services:
-  minio:
-    image: minio/minio:${MINIO_VERSION:-latest}
-    container_name: obs-minio
+  rustfs:
+    image: rustfs/rustfs:${RUSTFS_VERSION:-1.0.0}
+    container_name: obs-rustfs
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     ports:
       - "9000:9000"     # S3 API
       - "9002:9001"     # Console（宿主 9001 预留给 ClickHouse native）
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # 账号密码必填；RustFS 禁止使用默认的 rustfsadmin
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
-      - ./data/minio:/data
+      - ./data/rustfs:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     networks: [obs]
 
-  # 一次性任务：创建 Loki 所需的 bucket（loki-data）
-  minio-init:
-    image: minio/mc:latest
-    container_name: obs-minio-init
+  # 一次性任务：用 RustFS 官方 rc 客户端创建 Loki 所需的 bucket（loki-data）
+  rustfs-init:
+    image: rustfs/rc:${RUSTFS_RC_VERSION:-v0.1.36}
+    container_name: obs-rustfs-init
     depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} >/dev/null 2>&1; do sleep 2; done;
-      mc mb --ignore-existing local/loki-data;
-      echo 'bucket loki-data ready';
-      "
+      rustfs:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY" >/dev/null 2>&1; do sleep 2; done
+        rc bucket create --ignore-existing local/loki-data
+        echo "bucket loki-data ready"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
     networks: [obs]
 
   loki:
@@ -45,14 +59,14 @@ services:
     container_name: obs-loki
     restart: unless-stopped
     depends_on:
-      minio-init:
+      rustfs-init:
         condition: service_completed_successfully
     command: -config.file=/etc/loki/config.yml -config.expand-env=true
     ports:
       - "3100:3100"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
+      S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
     volumes:
       - ./config/loki-config.yml:/etc/loki/config.yml:ro
       - ./data/loki:/loki

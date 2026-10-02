@@ -1,0 +1,79 @@
+// NOTE: 已拆分为按模块 Job。请优先用 Jenkinsfile.wealth-module 或 Jenkinsfile.wealth-gateway 等。
+// 本文件对应旧全量流程（pipeline-wealth.sh），仅作兼容保留。
+// Wealth Freedom CI/CD：GitHub 拉码 → build-images.sh → deploy.sh <overlay>
+// 支持：选分支 / 指定完整 SHA 构建部署 / 按 IMAGE_TAG 回滚
+// Job 类型：Pipeline script from SCM（本 observability-stack 仓库）或「Pipeline script」粘贴
+// 凭据：GitHub SSH（id: github-ssh）供 checkout；Agent 需 docker + kubectl（本机 Docker Desktop K8s）
+pipeline {
+  agent any
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+  parameters {
+    choice(name: 'MODE', choices: ['build-deploy', 'rollback'], description: 'build-deploy=拉码构建部署；rollback=仅按 IMAGE_TAG 回滚（不构建）')
+    choice(name: 'OVERLAY', choices: ['dev', 'test', 'prod', 'local'], description: 'K8s kustomize overlay')
+    choice(name: 'SOURCE', choices: ['github', 'local-mount'], description: '代码来源：github=clone/fetch；local-mount=用 /gitee 挂载仓（本机快路径）')
+    string(name: 'IMAGE_TAG', defaultValue: 'auto', description: '镜像 tag。build-deploy 时空/local/auto → 自动用 freedom 短 SHA（branch-shortsha）；rollback 时必填历史 tag')
+    string(name: 'BRANCH_FREEDOM', defaultValue: 'main', description: 'wealth-freedom 分支')
+    string(name: 'BRANCH_WEB', defaultValue: 'main', description: 'wealth-freedom-web 分支')
+    string(name: 'BRANCH_MALL', defaultValue: 'main', description: 'wealth-ecommerce-web 分支')
+    string(name: 'GIT_SHA_FREEDOM', defaultValue: '', description: '可选：wealth-freedom 完整/短 SHA（7+）；空=分支 tip')
+    string(name: 'GIT_SHA_WEB', defaultValue: '', description: '可选：wealth-freedom-web SHA；空=分支 tip')
+    string(name: 'GIT_SHA_MALL', defaultValue: '', description: '可选：wealth-ecommerce-web SHA；空=分支 tip')
+    booleanParam(name: 'SKIP_MVN', defaultValue: false, description: '跳过 Maven（仅重打镜像）')
+    booleanParam(name: 'SKIP_FRONT', defaultValue: false, description: '跳过前端镜像')
+  }
+  environment {
+    WORKSPACE_ROOT = "${env.WORKSPACE}/repos"
+  }
+  stages {
+    stage('Checkout pipeline scripts') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('CI + CD') {
+      steps {
+        sh '''
+          set -euo pipefail
+          export MODE="${MODE}"
+          export OVERLAY="${OVERLAY}"
+          export SOURCE="${SOURCE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          export BRANCH_FREEDOM="${BRANCH_FREEDOM}"
+          export BRANCH_WEB="${BRANCH_WEB}"
+          export BRANCH_MALL="${BRANCH_MALL}"
+          export GIT_SHA_FREEDOM="${GIT_SHA_FREEDOM}"
+          export GIT_SHA_WEB="${GIT_SHA_WEB}"
+          export GIT_SHA_MALL="${GIT_SHA_MALL}"
+          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] && echo 1 || echo 0)"
+          export SKIP_FRONT="$([ "${SKIP_FRONT}" = "true" ] && echo 1 || echo 0)"
+          export WORKSPACE_ROOT="${WORKSPACE_ROOT}"
+          chmod +x jenkins/scripts/pipeline-wealth.sh
+          ./jenkins/scripts/pipeline-wealth.sh
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        def tagFile = '.wealth-image-tag'
+        if (fileExists(tagFile)) {
+          def tag = readFile(tagFile).trim()
+          currentBuild.description = "MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${tag}"
+        } else {
+          currentBuild.description = "MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${params.IMAGE_TAG}"
+        }
+      }
+    }
+    success {
+      echo "deploy overlay=${params.OVERLAY} mode=${params.MODE} ok"
+    }
+    failure {
+      echo "失败时检查：Agent 是否挂载 docker.sock、kubectl 能否连集群、GitHub SSH、secret.yaml、IMAGE_TAG/SHA 是否存在"
+    }
+  }
+}

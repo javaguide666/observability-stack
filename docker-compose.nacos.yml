@@ -13,10 +13,6 @@ services:
     image: nacos/nacos-server:${NACOS_VERSION:-v3.2.4-slim}
     container_name: obs-nacos
     restart: "no"
-    depends_on:
-      mysql:
-        condition: service_healthy
-        required: false
     environment:
       MODE: standalone
       PREFER_HOST_MODE: hostname

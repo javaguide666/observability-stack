@@ -1,0 +1,129 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>单模块 CI/CD：系统服务 wealth-system-server。仓库 wealth-freedom。首次集群请先执行一次 deploy.sh。脚本：pipeline-wealth-module.sh MODULE=system-server</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>MODE</name>
+          <description>build-deploy=拉码构建并滚动更新本模块；rollback=仅按 IMAGE_TAG 回滚本模块</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>build-deploy</string>
+              <string>rollback</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>OVERLAY</name>
+          <description>部署环境：dev / test / prod / local</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>dev</string>
+              <string>test</string>
+              <string>prod</string>
+              <string>local</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>SOURCE</name>
+          <description>github=clone/fetch（BRANCH/GIT_SHA 生效）；local-mount=用 /gitee 挂载仓</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>github</string>
+              <string>local-mount</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>IMAGE_TAG</name>
+          <description>镜像 tag。build-deploy 时空/local/auto → 自动 branch-shortsha；rollback 必填历史 tag</description>
+          <defaultValue>auto</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>REGISTRY</name>
+          <description>镜像仓库前缀。本机 Desktop 留空；测试/生产填如 registry.example.com/wealth（会 docker push + set 全名）</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>BRANCH</name>
+          <description>本模块分支（本地缓存下拉；刷新：Job wealth-refresh-branches）</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>main</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_SHA</name>
+          <description>可选：本模块仓库完整/短 SHA（7+）；空=分支 tip</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>SKIP_MVN</name>
+          <description>跳过 Maven（仅重打镜像，需已有 jar）</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>-1</daysToKeep>
+        <numToKeep>20</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+        <removeLastBuild>false</removeLastBuild>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+      <abortPrevious>false</abortPrevious>
+    </org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+  agent any
+  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;20&apos;)) }
+  stages {
+    stage(&apos;CI + CD&apos;) {
+      steps {
+        sh &apos;&apos;&apos;
+          set -euo pipefail
+          export MODULE=&quot;system-server&quot;
+          export MODE=&quot;${MODE}&quot;
+          export OVERLAY=&quot;${OVERLAY}&quot;
+          export SOURCE=&quot;${SOURCE}&quot;
+          export IMAGE_TAG=&quot;${IMAGE_TAG}&quot;
+          export REGISTRY=&quot;${REGISTRY:-}&quot;
+          export BRANCH=&quot;${BRANCH}&quot;
+          export GIT_SHA=&quot;${GIT_SHA:-}&quot;
+          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] &amp;&amp; echo 1 || echo 0)"
+          export WORKSPACE_ROOT=&quot;${WORKSPACE}/repos&quot;
+          export JAVA_HOME=/opt/java/jdk-25
+          export PATH=&quot;$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH&quot;
+          bash /jenkins-backup/scripts/pipeline-wealth-module.sh
+        &apos;&apos;&apos;
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        def tagFile = &quot;${env.WORKSPACE}/.wealth-image-tag&quot;
+        if (fileExists(tagFile)) {
+          currentBuild.description = &quot;MODULE=system-server MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${readFile(tagFile).trim()}&quot;
+        }
+      }
+    }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

@@ -15,7 +15,7 @@ services:
     container_name: obs-grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3002}:3000"   # 避开 K8s 电商前端 :3000 与 K8s 日志 Grafana :3001
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

@@ -20,7 +20,7 @@ services:
         hard: 262144
     ports:
       - "8123:8123"     # HTTP
-      - "9001:9000"     # Native（宿主 9001，避开 MinIO 的 9000 / 9001）
+      - "9001:9000"     # Native（宿主 9001，避开对象存储 RustFS 的 9000 / 9001）
     environment:
       # 25.x 未设密码时会禁止 default 远程登录，客户端会报 Code 194
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}

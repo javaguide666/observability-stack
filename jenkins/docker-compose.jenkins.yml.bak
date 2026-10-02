@@ -1,0 +1,33 @@
+# ============================================================
+# Jenkins LTS：CI（不纳入 docker-compose.all.yml）
+#
+# 启动：docker compose -f docker-compose.jenkins.yml up -d
+# 停止：docker compose -f docker-compose.jenkins.yml down
+# 控制台：http://localhost:18080（避开 Grafana 的 3000）
+# ============================================================
+name: obs-stack
+
+services:
+  jenkins:
+    image: jenkins/jenkins:${JENKINS_VERSION:-lts}
+    container_name: obs-jenkins
+    restart: unless-stopped
+    privileged: true
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "18080:8080"
+      - "50000:50000"
+    volumes:
+      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/jenkins/home:/var/jenkins_home
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge
