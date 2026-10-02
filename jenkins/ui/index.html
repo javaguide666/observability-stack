@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wealth CI</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="login-banner" class="login-banner hidden">
+    触发构建需要 Jenkins 登录。
+    <a id="login-link" href="/login?from=/userContent/wealth/">去登录</a>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">W</span>
+      <div>
+        <strong>Wealth CI</strong>
+        <span class="muted">分支构建 · Commit 回放 · 10 版本验证</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="user-chip" class="chip">检测登录…</span>
+      <a class="btn ghost" href="/" target="_blank" rel="noopener">Jenkins 原界面</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="modules">
+      <h2>模块</h2>
+      <nav id="module-nav"></nav>
+      <button id="btn-refresh-meta" class="btn ghost block" type="button">刷新分支 / 镜像缓存</button>
+      <p class="hint">缓存来自 Job <code>wealth-refresh-branches</code>。打开本页也会读 Jenkins 最近 10 次成功构建。</p>
+    </aside>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-mode="build-deploy">按分支 / Commit 构建</button>
+        <button type="button" class="tab" data-mode="rollback">启动历史版本</button>
+      </div>
+
+      <form id="build-form" class="form">
+        <div class="grid">
+          <label>
+            <span>环境</span>
+            <select name="OVERLAY" id="overlay">
+              <option value="dev" selected>dev（本机）</option>
+              <option value="test">test</option>
+              <option value="prod">prod</option>
+              <option value="local">local</option>
+            </select>
+          </label>
+          <label>
+            <span>代码来源</span>
+            <select name="SOURCE" id="source">
+              <option value="github" selected>github（分支 / SHA 生效）</option>
+              <option value="local-mount">local-mount（/gitee 挂载）</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="build-fields">
+          <label>
+            <span>Git 分支</span>
+            <select name="BRANCH" id="branch"></select>
+          </label>
+          <label>
+            <span>完整 Commit（可选）</span>
+            <input name="GIT_SHA" id="git-sha" type="text" spellcheck="false" placeholder="40 位 SHA；填写后自动识别分支，可不改上面的分支" />
+          </label>
+          <p class="hint" id="sha-hint">留空 = 构建所选分支最新代码。填完整 SHA 后，构建脚本会 fetch 该 commit 并自动选择所属分支。</p>
+        </div>
+
+        <div id="rollback-fields" class="hidden">
+          <p class="hint">从最近 10 个镜像版本里选一个，只滚动更新当前模块，不重新编译。用于验证「是不是这版代码改坏了」。</p>
+          <div id="history-list" class="history-list">加载历史版本…</div>
+          <input type="hidden" name="IMAGE_TAG" id="image-tag" value="auto" />
+        </div>
+
+        <details class="advanced">
+          <summary>高级选项</summary>
+          <label>
+            <span>镜像仓库前缀 REGISTRY</span>
+            <input name="REGISTRY" id="registry" type="text" placeholder="本机留空；测试/生产如 registry.example.com/wealth" />
+          </label>
+          <label id="skip-mvn-wrap" class="check">
+            <input name="SKIP_MVN" id="skip-mvn" type="checkbox" value="true" />
+            <span>跳过 Maven（仅 Java 模块，需已有 jar）</span>
+          </label>
+        </details>
+
+        <div class="submit-row">
+          <button type="submit" class="btn primary" id="btn-submit">开始构建部署</button>
+          <span id="form-status" class="status"></span>
+        </div>
+      </form>
+
+      <div class="builds">
+        <div class="builds-head">
+          <h2>最近构建</h2>
+          <a id="console-link" class="btn ghost" href="#" target="_blank" rel="noopener">打开 Job</a>
+        </div>
+        <ul id="build-list" class="build-list">加载中…</ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

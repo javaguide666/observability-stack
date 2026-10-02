@@ -1,0 +1,54 @@
+# ClickVisual 查询台。元数据在已有 MySQL 库 clickvisual，日志在已有 ClickHouse。
+# 会话用内存，不另起 Redis。密码与 .env.example 默认值一致；改了密码要同步改这里。
+# MySQL 密码里的 @ 写成 %40，否则 DSN 会被截断。
+
+[app]
+secretKey = "obs-clickvisual"
+rootURL = "http://localhost:19001"
+baseURL = "/api/admin/login/"
+permissionFile = "./config/resource.yaml"
+
+[casbin.rule]
+path = "./config/rbac.conf"
+
+[server.http]
+host = "0.0.0.0"
+port = 19001
+embedPath = "dist"
+maxAge = 86400
+
+[server.governor]
+host = "0.0.0.0"
+port = 19011
+
+[logger]
+level = "info"
+writer = "stderr"
+name = "clickvisual.log"
+
+[mysql]
+connMaxLifetime = "300s"
+debug = false
+# 不用 root：root 密码含 @，这份 DSN 解析会把密码截断。账号由 clickvisual-init 创建。
+dsn = "clickvisual:clickvisual@tcp(mysql:3306)/clickvisual?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=True&loc=Local&readTimeout=10s&timeout=10s&writeTimeout=10s"
+level = "panic"
+maxIdleConns = 10
+maxOpenConns = 20
+
+[auth]
+mode = "memstore"
+name = "clickvisual_session"
+debug = false
+Keypairs = "obs-clickvisual-session"
+
+[auth.anonymous]
+enabled = false
+
+[auth.proxy]
+enabled = false
+
+[prom2click]
+enable = false
+
+[defaultCh]
+dsn = "clickhouse://default:Admin13278@clickhouse:9000/default?dial_timeout=10s&max_execution_time=60"

@@ -5,7 +5,7 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
-    buildDiscarder(logRotator(numToKeepStr: '20'))
+    buildDiscarder(logRotator(numToKeepStr: '10'))
   }
   parameters {
     choice(name: 'MODE', choices: ['build-deploy', 'rollback'], description: 'build-deploy / rollback')
@@ -14,7 +14,7 @@ pipeline {
     string(name: 'REGISTRY', defaultValue: '', description: '测试/生产仓库前缀，本机留空')
     string(name: 'IMAGE_TAG', defaultValue: 'auto', description: 'auto 或历史 tag')
     string(name: 'BRANCH', defaultValue: 'main', description: 'wealth-freedom 分支')
-    string(name: 'GIT_SHA', defaultValue: '', description: '可选 SHA；空=分支 tip')
+    string(name: 'GIT_SHA', defaultValue: '', description: '完整 Commit；填写后自动识别分支，空=分支最新')
     booleanParam(name: 'SKIP_MVN', defaultValue: false, description: '跳过 Maven（仅重打镜像）')
   }
   environment {

@@ -39,7 +39,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>IMAGE_TAG</name>
-          <description>镜像 tag。build-deploy 时空/local/auto → 自动 branch-shortsha；rollback 必填历史 tag</description>
+          <description>build-deploy 用 auto；rollback 填最近 10 个历史 tag 之一（控制台可点选）</description>
           <defaultValue>auto</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -60,7 +60,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>GIT_SHA</name>
-          <description>可选：本模块仓库完整/短 SHA（7+）；空=分支 tip</description>
+          <description>完整 Commit（40 位或 7+）。填写后自动识别分支，BRANCH 可保持默认；空=分支最新</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -74,7 +74,7 @@
     <jenkins.model.BuildDiscarderProperty>
       <strategy class="hudson.tasks.LogRotator">
         <daysToKeep>-1</daysToKeep>
-        <numToKeep>20</numToKeep>
+        <numToKeep>10</numToKeep>
         <artifactDaysToKeep>-1</artifactDaysToKeep>
         <artifactNumToKeep>-1</artifactNumToKeep>
         <removeLastBuild>false</removeLastBuild>
@@ -87,7 +87,7 @@
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
     <script>pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;20&apos;)) }
+  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;10&apos;)) }
   stages {
     stage(&apos;CI + CD&apos;) {
       steps {

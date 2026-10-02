@@ -57,7 +57,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>GIT_SHA</name>
-          <description>可选：对各模块仓库使用同一 SHA（通常留空；三仓 SHA 不同时请用单模块 Job）</description>
+          <description>完整 Commit。全量时三仓 SHA 必须相同，否则请用单模块；填写后自动识别分支</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -70,7 +70,7 @@
     <jenkins.model.BuildDiscarderProperty>
       <strategy class="hudson.tasks.LogRotator">
         <daysToKeep>-1</daysToKeep>
-        <numToKeep>20</numToKeep>
+        <numToKeep>10</numToKeep>
         <artifactDaysToKeep>-1</artifactDaysToKeep>
         <artifactNumToKeep>-1</artifactNumToKeep>
         <removeLastBuild>false</removeLastBuild>
@@ -83,7 +83,7 @@
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
     <script>pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;20&apos;)) }
+  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;10&apos;)) }
   stages {
     stage(&apos;All modules&apos;) {
       steps {

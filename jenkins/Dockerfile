@@ -35,4 +35,4 @@ USER jenkins
 RUN jenkins-plugin-cli --plugins \
   workflow-aggregator git credentials credentials-binding ssh-credentials \
   pipeline-stage-view timestamper ws-cleanup configuration-as-code \
-  list-git-branches-parameter git-parameter
+  list-git-branches-parameter git-parameter simple-theme-plugin

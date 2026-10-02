@@ -1,0 +1,65 @@
+# ============================================================
+# 服务器核心指标：Prometheus + node-exporter
+#
+# node-exporter 采集宿主机 CPU / 内存 / 负载 / 磁盘 / 网络。
+# Mac Docker Desktop 上采到的是 Linux 虚拟机，不是 macOS 本机；
+# 迁到 Linux 测试机后即为该机宿主机。
+#
+# 启动：
+#   docker compose -f docker-compose.prometheus.yml up -d
+# 看板（另起 Grafana，数据源与「服务器核心指标」已预置）：
+#   docker compose -f docker-compose.grafana.yml up -d
+# 停止：
+#   docker compose -f docker-compose.prometheus.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.15.0}
+    container_name: obs-prometheus
+    restart: unless-stopped
+    # 本地栈：镜像默认 nobody，bind mount 的数据目录由 Docker 建成 root，直接以 root 写盘。
+    user: "0:0"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.listen-address=0.0.0.0:9090
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [obs]
+
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.12.1}
+    container_name: obs-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      # 由 Linux 引擎解析：Mac 上是 Docker Desktop 虚拟机，Linux 上是宿主机。
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

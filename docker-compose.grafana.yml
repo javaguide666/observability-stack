@@ -1,11 +1,14 @@
 # ============================================================
-# Grafana：统一查询 UI（Loki / ClickHouse 数据源按已启动的组件生效）
+# Grafana：统一查询 UI（Prometheus 指标 / 日志 LogQL / ClickHouse SQL，按已启动的组件生效）
 #
-# 单独启动（需已有 Loki 或 ClickHouse，否则对应数据源会显示异常）：
+# 单独启动（未启动的数据源会显示异常）：
 #   docker compose -f docker-compose.grafana.yml up -d
 #
-# 与 Loki 一起：
-#   docker compose -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
+# 服务器核心指标（Prometheus 先起，看板在文件夹「服务器」）：
+#   docker compose -f docker-compose.prometheus.yml -f docker-compose.grafana.yml up -d
+#
+# 与日志栈一起（日志先要有 ClickHouse）：
+#   docker compose -f docker-compose.clickhouse.yml -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
 # ============================================================
 name: obs-stack
 
@@ -15,7 +18,7 @@ services:
     container_name: obs-grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3002}:3000"   # 避开 K8s 电商前端 :3000 与 K8s 日志 Grafana :3001
+      - "${GRAFANA_PORT:-3002}:3000"   # 本机唯一 Grafana：Loki 日志 + Prometheus 指标。避开电商前端 :3000
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

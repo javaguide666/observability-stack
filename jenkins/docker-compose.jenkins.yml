@@ -28,6 +28,8 @@ services:
       - ${HOME}/.kube:/var/jenkins_home/.kube:ro
       - ${HOME}/.ssh:/var/jenkins_home/.ssh:ro
       - ./jenkins:/jenkins-backup:ro
+      - ./jenkins/ui:/var/jenkins_home/userContent/wealth:ro
+      - ./jenkins/init.groovy.d/wealth-ui.groovy:/var/jenkins_home/init.groovy.d/wealth-ui.groovy:ro
       # 可选：直接挂本机三仓，Pipeline 也可 git clone
       - ${HOME}/gitee:/gitee:rw
     group_add:

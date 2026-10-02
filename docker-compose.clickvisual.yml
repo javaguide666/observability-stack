@@ -1,0 +1,57 @@
+# ============================================================
+# ClickVisual：日志查询 UI（复用已有 MySQL + ClickHouse）
+#
+# 先起 MySQL 与 ClickHouse，再起本文件：
+#   docker compose -f docker-compose.mysql.yml up -d
+#   docker compose -f docker-compose.clickhouse.yml up -d
+#   docker compose -f docker-compose.clickvisual.yml up -d
+# 首次打开 http://localhost:19001/install/init 初始化元数据库。
+# 登录：clickvisual / clickvisual
+# 停止：docker compose -f docker-compose.clickvisual.yml down
+# ============================================================
+name: obs-stack
+
+services:
+  # 一次性任务：在已有 MySQL 上建元数据库。MySQL 在另一个 compose 文件里，这里不能 depends_on。
+  clickvisual-init:
+    image: mysql:${MYSQL_VERSION:-9.7.2}
+    container_name: obs-clickvisual-init
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Admin13278@}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mysql -h mysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+          echo "waiting for mysql"
+          sleep 2
+        done
+        mysql -h mysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -e \
+          "CREATE DATABASE IF NOT EXISTS clickvisual DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+           CREATE USER IF NOT EXISTS 'clickvisual'@'%' IDENTIFIED BY 'clickvisual';
+           GRANT ALL PRIVILEGES ON clickvisual.* TO 'clickvisual'@'%';
+           FLUSH PRIVILEGES;"
+        echo "database clickvisual ready"
+    networks: [obs]
+    restart: "no"
+
+  clickvisual:
+    image: clickvisual/clickvisual:${CLICKVISUAL_VERSION:-1.0.4}
+    container_name: obs-clickvisual
+    restart: unless-stopped
+    depends_on:
+      clickvisual-init:
+        condition: service_completed_successfully
+    ports:
+      - "19001:19001"
+    environment:
+      EGO_CONFIG_PATH: /clickvisual/config/docker.toml
+      EGO_LOG_WRITER: stderr
+    volumes:
+      # 只覆盖这一份配置，镜像里的 resource.yaml / rbac.conf 仍可用。
+      - ./config/clickvisual/docker.toml:/clickvisual/config/docker.toml:ro
+    networks: [obs]
+
+networks:
+  obs:
+    name: obs-net
+    driver: bridge

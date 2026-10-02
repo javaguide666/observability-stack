@@ -1,75 +1,48 @@
 # ============================================================
-# Grafana Loki：日志聚合（单体模式 + RustFS 对象存储）
+# 日志：qryn 只做 Loki 协议搬运，存储复用已有 ClickHouse
 #
-# 启动：docker compose -f docker-compose.loki.yml up -d
+# qryn 实现 Loki Push 与 LogQL，本身不落盘。日志写入 ClickHouse 库 obs_logs。
+# 查询用 ClickVisual（docker-compose.clickvisual.yml）。服务名保持 loki，端口保持 3100。
+#
+# 先起 ClickHouse，再起本文件：
+#   docker compose -f docker-compose.clickhouse.yml up -d
+#   docker compose -f docker-compose.loki.yml up -d
 # 采集：docker compose -f docker-compose.loki.yml --profile logs up -d
+# 查询：docker compose -f docker-compose.grafana.yml up -d
 # 停止：docker compose -f docker-compose.loki.yml down
-#
-# 可视化（可选，另起 Grafana）：
-#   docker compose -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
 # ============================================================
 name: obs-stack
 
 services:
-  rustfs:
-    image: rustfs/rustfs:${RUSTFS_VERSION:-1.0.0}
-    container_name: obs-rustfs
-    restart: unless-stopped
-    ports:
-      - "9000:9000"     # S3 API
-      - "9002:9001"     # Console（宿主 9001 预留给 ClickHouse native）
-    environment:
-      # 账号密码必填；RustFS 禁止使用默认的 rustfsadmin
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
-      RUSTFS_VOLUMES: /data
-      RUSTFS_ADDRESS: ":9000"
-      RUSTFS_CONSOLE_ADDRESS: ":9001"
-      RUSTFS_CONSOLE_ENABLE: "true"
-    volumes:
-      - ./data/rustfs:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/health >/dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    networks: [obs]
-
-  # 一次性任务：用 RustFS 官方 rc 客户端创建 Loki 所需的 bucket（loki-data）
-  rustfs-init:
-    image: rustfs/rc:${RUSTFS_RC_VERSION:-v0.1.36}
-    container_name: obs-rustfs-init
-    depends_on:
-      rustfs:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        until rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY" >/dev/null 2>&1; do sleep 2; done
-        rc bucket create --ignore-existing local/loki-data
-        echo "bucket loki-data ready"
-    environment:
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
-    networks: [obs]
-
+  # 无状态。重启不丢日志，日志在 ClickHouse。
   loki:
-    image: grafana/loki:${LOKI_VERSION:-3.7.7}
+    image: qxip/qryn:${QRYN_VERSION:-3.2.39}
     container_name: obs-loki
     restart: unless-stopped
-    depends_on:
-      rustfs-init:
-        condition: service_completed_successfully
-    command: -config.file=/etc/loki/config.yml -config.expand-env=true
     ports:
       - "3100:3100"
     environment:
-      S3_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?请在 .env 中设置 RUSTFS_ACCESS_KEY}
-      S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:?请在 .env 中设置 RUSTFS_SECRET_KEY}
-    volumes:
-      - ./config/loki-config.yml:/etc/loki/config.yml:ro
-      - ./data/loki:/loki
+      CLICKHOUSE_SERVER: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_PROTO: http
+      # user:password。密码里不能含冒号，否则这里会被拆错。
+      CLICKHOUSE_AUTH: ${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-Admin13278}
+      CLICKHOUSE_DB: obs_logs
+      LABELS_DAYS: ${LOG_RETENTION_DAYS:-7}
+      SAMPLES_DAYS: ${LOG_RETENTION_DAYS:-7}
+      HOST: 0.0.0.0
+      PORT: "3100"
+    healthcheck:
+      # /loki/api/v1/labels 会打到 ClickHouse，能返回才算搬运层就绪。
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/loki/api/v1/labels').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
     networks: [obs]
 
   # Promtail 已于 2026-03 停止维护，官方继任者为 Grafana Alloy。
@@ -79,7 +52,8 @@ services:
     profiles: ["logs"]
     restart: unless-stopped
     depends_on:
-      - loki
+      loki:
+        condition: service_healthy
     command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     ports:
       - "12345:12345"

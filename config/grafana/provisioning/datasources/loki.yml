@@ -1,4 +1,6 @@
-# Grafana 自动配置：Loki 数据源
+# Grafana 自动配置：日志数据源。
+# 地址是 qryn（服务名 loki）。Explore 里用 LogQL；日志存在 ClickHouse 库 obs_logs。
+# 未启动日志栈时该数据源会显示异常，不影响 ClickHouse 数据源。
 apiVersion: 1
 
 datasources:

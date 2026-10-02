@@ -1,0 +1,13 @@
+# Grafana 自动配置：Prometheus（服务器核心指标）。
+# 未启动 Prometheus 时该数据源会显示异常，不影响 Loki / ClickHouse。
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

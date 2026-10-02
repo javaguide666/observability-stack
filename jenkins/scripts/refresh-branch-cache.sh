@@ -90,5 +90,6 @@ sort -u "$CACHE_DIR"/wealth-freedom.txt "$CACHE_DIR"/wealth-freedom-web.txt "$CA
 export BRANCH_CACHE_DIR="$CACHE_DIR"
 export JENKINS_HOME_JOBS="${JENKINS_HOME_JOBS:-}"
 python3 "$SCRIPT_DIR/sync-branch-choices.py"
+python3 "$SCRIPT_DIR/write-ui-meta.py"
 
-echo "==> 完成：BRANCH 已改为本地缓存下拉（样式与 SOURCE 相同）"
+echo "==> 完成：BRANCH 已改为本地缓存下拉；Wealth CI 控制台 meta.json 已更新"

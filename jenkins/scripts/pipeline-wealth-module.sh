@@ -19,6 +19,7 @@ BRANCH="${BRANCH#origin/}"
 GIT_SHA="${GIT_SHA:-}"
 # 测试/生产私有仓库前缀，例如 registry.example.com/wealth；空=本机 Desktop 短名镜像
 REGISTRY="${REGISTRY:-}"
+HISTORY_KEEP="${HISTORY_KEEP:-10}"
 
 export JAVA_HOME="${JAVA_HOME:-/opt/java/jdk-25}"
 export PATH="${JAVA_HOME}/bin:/opt/maven/bin:/usr/local/bin:${PATH:-/usr/bin}"
@@ -90,6 +91,48 @@ sanitize_tag_part() {
   echo "$1" | tr '/:' '--' | tr -cd 'A-Za-z0-9_.-' | cut -c1-80
 }
 
+# 根据完整/短 SHA 选出最合适的分支名（main > master > dev > 其余）
+detect_branch_for_sha() {
+  local dir="$1" full="$2" preferred="${3:-}"
+  local names name
+  names=$(git -C "$dir" branch -r --contains "$full" 2>/dev/null \
+    | sed 's/^[* ]*//; s#^origin/##' \
+    | grep -vE '^(HEAD|)$' \
+    | grep -v ' ' \
+    | sort -u || true)
+  if [[ -z "$names" ]]; then
+    return 1
+  fi
+  if [[ -n "$preferred" ]] && printf '%s\n' "$names" | grep -qx "$preferred"; then
+    echo "$preferred"
+    return 0
+  fi
+  for name in main master dev develop; do
+    if printf '%s\n' "$names" | grep -qx "$name"; then
+      echo "$name"
+      return 0
+    fi
+  done
+  echo "$names" | head -1
+}
+
+prune_image_history() {
+  local image="$1"
+  local keep="${HISTORY_KEEP:-10}"
+  local tags tag n=0
+  tags=$(docker images --format '{{.CreatedAt}}\t{{.Tag}}' "$image" 2>/dev/null \
+    | sort -r \
+    | awk -F'\t' '$2!="" && $2!="<none>" && $2!="latest" && $2!="local" {print $2}')
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    n=$((n + 1))
+    if [[ "$n" -gt "$keep" ]]; then
+      echo "==> 清理超出 ${keep} 的历史镜像 ${image}:${tag}"
+      docker image rm "${image}:${tag}" >/dev/null 2>&1 || true
+    fi
+  done <<< "$tags"
+}
+
 resolve_sha() {
   local dir="$1" want="$2" full
   if [[ ${#want} -lt 7 ]]; then
@@ -113,23 +156,37 @@ resolve_sha() {
 
 clone_or_update() {
   local url="$1" dir="$2" branch="$3" sha="${4:-}"
-  local full
+  local full detected
+  branch="${branch:-main}"
   if [[ -d "$dir/.git" ]]; then
     GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch --all --prune
   else
     mkdir -p "$(dirname "$dir")"
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
-      git clone --branch "$branch" --single-branch "$url" "$dir" || \
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
-      git clone "$url" "$dir"
+    if [[ -n "$sha" ]]; then
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+        git clone "$url" "$dir"
+    else
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+        git clone --branch "$branch" --single-branch "$url" "$dir" || \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+        git clone "$url" "$dir"
+    fi
     GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch --all --prune || true
   fi
 
   if [[ -n "$sha" ]]; then
+    git -C "$dir" fetch origin "$sha" 2>/dev/null || true
     git -C "$dir" fetch origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" 2>/dev/null || true
     full=$(resolve_sha "$dir" "$sha")
+    detected=$(detect_branch_for_sha "$dir" "$full" "$branch" || true)
+    if [[ -n "$detected" ]]; then
+      BRANCH="$detected"
+      echo "==> SHA ${full:0:12} 自动选择分支 BRANCH=${BRANCH}"
+    else
+      echo "WARN: 无法从 SHA 反查分支，继续使用 BRANCH=${branch}" >&2
+    fi
     echo "==> checkout $(basename "$dir") @ ${full} (requested ${sha})"
     git -C "$dir" checkout --detach "$full"
   else
@@ -382,7 +439,7 @@ if [[ "$MODE" == "rollback" ]]; then
   kubectl -n "$NS" get pods -l "app=${MOD_DEPLOY[$MODULE]}" -o wide 2>/dev/null || \
     kubectl -n "$NS" get pods -o wide | grep "${MOD_DEPLOY[$MODULE]}" || true
   kubectl -n "$NS" get deploy "${MOD_DEPLOY[$MODULE]}" -o wide || true
-  echo "==> 完成 MODE=rollback MODULE=${MODULE} IMAGE_TAG=${IMAGE_TAG}"
+  echo "==> 完成 MODE=rollback MODULE=${MODULE} IMAGE_TAG=${IMAGE_TAG}（历史版本已启动）"
   exit 0
 fi
 
@@ -398,6 +455,11 @@ push_if_registry
 set_one_image "$IMAGE_TAG"
 wait_one_rollout
 persist_image_tag "$IMAGE_TAG"
+prune_image_history "${MOD_IMAGE[$MODULE]}"
+if command -v python3 >/dev/null 2>&1; then
+  JENKINS_HOME="${JENKINS_HOME:-/var/jenkins_home}" \
+    python3 /jenkins-backup/scripts/write-ui-meta.py >/dev/null 2>&1 || true
+fi
 
 echo "==> 验收"
 kubectl -n "$NS" get deploy "${MOD_DEPLOY[$MODULE]}" -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image 2>/dev/null || true

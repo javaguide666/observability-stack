@@ -1,0 +1,13 @@
+# 预置看板。JSON 放在 json/，避免把本文件当成看板解析。
+apiVersion: 1
+
+providers:
+  - name: server-core
+    orgId: 1
+    folder: 服务器
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

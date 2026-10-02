@@ -1,5 +1,5 @@
-# Grafana 自动配置：ClickHouse 数据源
-# 未启动 ClickHouse 时该数据源会显示异常，不影响 Loki 使用。
+# Grafana 自动配置：ClickHouse 数据源（业务 OLAP，以及需要直接写 SQL 时看 obs_logs）。
+# 未启动 ClickHouse 时该数据源会显示异常，不影响日志数据源。
 # 密码与 ClickHouse 容器环境变量一致（见 .env / docker-compose.clickhouse.yml）。
 apiVersion: 1
 

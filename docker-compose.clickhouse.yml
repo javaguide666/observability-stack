@@ -1,5 +1,5 @@
 # ============================================================
-# ClickHouse：指标 / 日志分析库
+# ClickHouse：指标 / 业务 OLAP；日志栈的 qryn 也把日志写进同一实例的库 obs_logs
 #
 # 启动：docker compose -f docker-compose.clickhouse.yml up -d
 # 停止：docker compose -f docker-compose.clickhouse.yml down
@@ -20,7 +20,7 @@ services:
         hard: 262144
     ports:
       - "8123:8123"     # HTTP
-      - "9001:9000"     # Native（宿主 9001，避开对象存储 RustFS 的 9000 / 9001）
+      - "9001:9000"     # Native（宿主 9001，9000 留给本机其它服务）
     environment:
       # 25.x 未设密码时会禁止 default 远程登录，客户端会报 Code 194
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}

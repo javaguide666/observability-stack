@@ -84,13 +84,19 @@ def main() -> int:
     for job in REPO:
         seed = SEED / f"{job}.xml"
         if seed.exists():
-            seed.write_text(patch_text(seed.read_text(), job))
-            print(f"seed OK {job} ({len(load_branches(REPO[job]))} branches)")
+            try:
+                seed.write_text(patch_text(seed.read_text(), job))
+                print(f"seed OK {job} ({len(load_branches(REPO[job]))} branches)")
+            except OSError as e:
+                print(f"seed skip {job}: {e}")
         for home in homes:
             cfg = home / job / "config.xml"
             if cfg.exists():
-                cfg.write_text(patch_text(cfg.read_text(), job))
-                print(f"home OK {home.name}/{job}")
+                try:
+                    cfg.write_text(patch_text(cfg.read_text(), job))
+                    print(f"home OK {home}/{job}")
+                except OSError as e:
+                    print(f"home skip {home}/{job}: {e}")
     return 0
 
 

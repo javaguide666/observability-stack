@@ -1,5 +1,6 @@
-// Grafana Alloy 日志采集示例：读取 ./data/host-logs 下的 *.log 并推送 Loki
-// 使用方式：docker compose --profile logs up -d
+// Grafana Alloy 日志采集示例：读取 ./data/host-logs 下的 *.log，
+// 按 Loki Push API 交给 qryn（服务名 loki:3100），由 qryn 写入 ClickHouse。
+// 使用方式：docker compose -f docker-compose.loki.yml --profile logs up -d
 loki.source.file "host_logs" {
   targets = [
     {__path__ = "/var/log/host/*.log", job = "host"},

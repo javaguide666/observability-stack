@@ -1,0 +1,31 @@
+/* Wealth CI：压低 Jenkins 原界面噪音，突出构建参数 */
+.wealth-ci-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  margin: 0;
+  background: #151d27;
+  color: #e7eef6;
+  border-bottom: 1px solid #2a3a4d;
+  font-size: 14px;
+}
+.wealth-ci-banner a {
+  color: #3d9cf0;
+  font-weight: 600;
+}
+
+#page-header .page-header__brand {
+  max-width: none;
+}
+
+.jenkins-form-item {
+  max-width: 720px;
+}
+
+.app-page-body .jenkins-button--primary,
+#bottom-sticker .jenkins-button--primary,
+button[name="Submit"] {
+  min-width: 140px;
+}
