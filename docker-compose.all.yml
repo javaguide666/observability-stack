@@ -1,5 +1,5 @@
 # ============================================================
-# 开发数据栈：MySQL + Redis + Nacos + PostgreSQL + ClickHouse
+# 开发数据栈：MySQL + Redis + Nacos + PostgreSQL + ClickHouse（仅聚合 include，各组件仍可单独起）
 #
 # 启动：docker compose -f docker-compose.all.yml up -d
 # 停止：docker compose -f docker-compose.all.yml down

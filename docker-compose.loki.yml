@@ -16,11 +16,11 @@ name: obs-stack
 services:
   # 无状态。重启不丢日志，日志在 ClickHouse。
   loki:
-    image: qxip/qryn:${QRYN_VERSION:-3.2.39}
-    container_name: obs-loki
+    image: ${REGISTRY_MIRROR:-}qxip/qryn:${QRYN_VERSION:-3.2.39}
+    container_name: ${CONTAINER_PREFIX:-obs}-loki
     restart: unless-stopped
     ports:
-      - "3100:3100"
+      - "${LOKI_PORT:-3100}:3100"
     environment:
       CLICKHOUSE_SERVER: clickhouse
       CLICKHOUSE_PORT: "8123"
@@ -43,12 +43,17 @@ services:
       timeout: 5s
       retries: 12
       start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
   # Promtail 已于 2026-03 停止维护，官方继任者为 Grafana Alloy。
   alloy:
-    image: grafana/alloy:latest
-    container_name: obs-alloy
+    image: ${REGISTRY_MIRROR:-}grafana/alloy:${ALLOY_VERSION:-v1.20.1}
+    container_name: ${CONTAINER_PREFIX:-obs}-alloy
     profiles: ["logs"]
     restart: unless-stopped
     depends_on:
@@ -56,13 +61,19 @@ services:
         condition: service_healthy
     command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
     ports:
-      - "12345:12345"
+      - "${ALLOY_PORT:-12345}:12345"
     volumes:
       - ./config/alloy.config.alloy:/etc/alloy/config.alloy:ro
-      - ./data/host-logs:/var/log/host:ro
+      - ${LOCAL_DATA_DIR:-./data}/host-logs:/var/log/host:ro
+    # alloy 镜像无 shell/curl/wget，无法做容器内 healthcheck
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

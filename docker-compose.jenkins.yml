@@ -1,7 +1,8 @@
 # ============================================================
 # Jenkins LTS + Wealth CI 工具（docker/kubectl/mvn/jdk25）
 # 启动：docker compose -f docker-compose.jenkins.yml up -d --build
-# 控制台：http://localhost:18080
+# 控制台：http://localhost:${JENKINS_PORT:-18080}
+# 宿主路径均可在 .env 覆盖：JENKINS_KUBE_DIR / JENKINS_SSH_DIR / JENKINS_WORKSPACE_DIR
 # Pipeline 备份：./jenkins/
 # ============================================================
 name: obs-stack
@@ -11,27 +12,33 @@ services:
     build:
       context: ./jenkins
       dockerfile: Dockerfile
-    image: wealth-jenkins:lts-ci
-    container_name: obs-jenkins
+    image: ${JENKINS_IMAGE:-wealth-jenkins:lts-ci}
+    container_name: ${CONTAINER_PREFIX:-obs}-jenkins
     restart: unless-stopped
     privileged: true
     environment:
-      TZ: Asia/Shanghai
+      TZ: ${TZ:-Asia/Shanghai}
       JAVA_HOME: /opt/java/jdk-25
       PATH: /opt/java/jdk-25/bin:/opt/maven/bin:/usr/local/bin:/opt/java/openjdk/bin:/usr/sbin:/usr/bin:/sbin:/bin
     ports:
-      - "18080:8080"
-      - "50000:50000"
+      - "${JENKINS_PORT:-18080}:8080"
+      - "${JENKINS_AGENT_PORT:-50000}:50000"
     volumes:
-      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/jenkins/home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME}/.kube:/var/jenkins_home/.kube:ro
-      - ${HOME}/.ssh:/var/jenkins_home/.ssh:ro
+      - ${DOCKER_DATA_DIR:-./data}/jenkins/home:/var/jenkins_home
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${JENKINS_KUBE_DIR:-${HOME}/.kube}:/var/jenkins_home/.kube:ro
+      - ${JENKINS_SSH_DIR:-${HOME}/.ssh}:/var/jenkins_home/.ssh:ro
       - ./jenkins:/jenkins-backup:ro
       - ./jenkins/ui:/var/jenkins_home/userContent/wealth:ro
       - ./jenkins/init.groovy.d/wealth-ui.groovy:/var/jenkins_home/init.groovy.d/wealth-ui.groovy:ro
       # 可选：直接挂本机三仓，Pipeline 也可 git clone
-      - ${HOME}/gitee:/gitee:rw
+      - ${JENKINS_WORKSPACE_DIR:-${HOME}/gitee}:/gitee:rw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8080/login || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
     group_add:
       - "0"
     logging:
@@ -43,5 +50,5 @@ services:
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

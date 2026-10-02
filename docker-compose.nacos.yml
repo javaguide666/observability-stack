@@ -1,22 +1,24 @@
 # ============================================================
-# Nacos 3.2.4 GA：单机 + 已有 MySQL（无 db-init、无开机自启）
+# Nacos 3.2.4 GA：单机 + MySQL（库表由 MySQL 首次初始化脚本导入）
 #
-# 先起 MySQL，再起本文件；或直接用 docker-compose.all.yml
-#   docker compose -f docker-compose.mysql.yml up -d
-#   docker compose -f docker-compose.nacos.yml up -d
+# 单独启动：docker compose -f docker-compose.nacos.yml up -d
+#   MySQL 在另一个 compose 文件里（跨文件无法 depends_on），请先起 MySQL 并等 healthy；
+#   可用 docker-compose.all.yml 一次拉起，或手动先起 MySQL。若 MySQL 还没好，Nacos 会按 restart: unless-stopped
+#   自动重试直到连上，因此顺序错了也不会永久失败。
 # 停止：docker compose -f docker-compose.nacos.yml down
+# nacos-init：一次性、幂等地创建 Nacos 3.x 控制台 admin 账号（已存在则跳过）。
 # ============================================================
 name: obs-stack
 
 services:
   nacos:
-    image: nacos/nacos-server:${NACOS_VERSION:-v3.2.4-slim}
-    container_name: obs-nacos
-    restart: "no"
+    image: ${REGISTRY_MIRROR:-}nacos/nacos-server:${NACOS_VERSION:-v3.2.4-slim}
+    container_name: ${CONTAINER_PREFIX:-obs}-nacos
+    restart: unless-stopped
     environment:
       MODE: standalone
       PREFER_HOST_MODE: hostname
-      TZ: Asia/Shanghai
+      TZ: ${TZ:-Asia/Shanghai}
       SPRING_DATASOURCE_PLATFORM: mysql
       MYSQL_SERVICE_HOST: mysql
       MYSQL_SERVICE_PORT: 3306
@@ -28,17 +30,17 @@ services:
       NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-nacos_identity}
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-nacos_value}
-      JVM_XMS: 512m
-      JVM_XMX: 512m
-      JVM_XMN: 256m
+      JVM_XMS: ${NACOS_JVM_XMS:-512m}
+      JVM_XMX: ${NACOS_JVM_XMX:-512m}
+      JVM_XMN: ${NACOS_JVM_XMN:-256m}
     ports:
-      - "8080:8080"   # Web 控制台（与 SkyWalking UI 互斥，按需只起一个）
-      - "8848:8848"   # 客户端 HTTP
-      - "9848:9848"   # 客户端 gRPC
-      - "9849:9849"   # 服务端 gRPC
+      - "${NACOS_CONSOLE_PORT:-8080}:8080"   # Web 控制台（SkyWalking UI 已改走 18089，不再冲突）
+      - "${NACOS_PORT:-8848}:8848"           # 客户端 HTTP
+      - "${NACOS_GRPC_PORT:-9848}:9848"      # 客户端 gRPC
+      - "${NACOS_RAFT_PORT:-9849}:9849"      # 服务端 gRPC
     volumes:
-      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/nacos/data:/home/nacos/data
-      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/nacos/logs:/home/nacos/logs
+      - ${DOCKER_DATA_DIR:-./data}/nacos/data:/home/nacos/data
+      - ${DOCKER_DATA_DIR:-./data}/nacos/logs:/home/nacos/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -54,7 +56,32 @@ services:
         max-file: "3"
     networks: [obs]
 
+  # 一次性：Nacos 3.x 开启鉴权后首次需初始化 admin 密码；已初始化则接口返回错误，脚本忽略并成功退出。
+  nacos-init:
+    image: ${REGISTRY_MIRROR:-}nacos/nacos-server:${NACOS_VERSION:-v3.2.4-slim}
+    container_name: ${CONTAINER_PREFIX:-obs}-nacos-init
+    restart: "no"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    environment:
+      NACOS_ADMIN_PASSWORD: ${NACOS_ADMIN_PASSWORD:-NacosAdmin}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for i in $$(seq 1 30); do
+          code=$$(curl -s -o /dev/null -w '%{http_code}' http://nacos:8848/nacos/ || true)
+          [ "$$code" != "000" ] && break
+          sleep 2
+        done
+        out=$$(curl -s -X POST http://nacos:8848/nacos/v3/auth/user/admin --data-urlencode "password=$$NACOS_ADMIN_PASSWORD" || true)
+        case "$$out" in
+          *'"username"'*|*'"code":0'*) echo "nacos admin initialized" ;;
+          *) echo "nacos admin init skipped (already initialized or not supported)" ;;
+        esac
+    networks: [obs]
+
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

@@ -24,6 +24,11 @@ rebel.xml
 
 data/
 
+### 本地环境变量（含密码）###
+.env
+.env.*
+!.env.example
+
 ### NetBeans ###
 nbproject/private/
 build/

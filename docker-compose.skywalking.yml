@@ -2,15 +2,19 @@
 # SkyWalking：链路追踪 / 服务指标
 # BanyanDB 0.10.0 + OAP / UI 10.4.0
 #
-# 启动：docker compose -f docker-compose.skywalking.yml up -d
-# 停止：docker compose -f docker-compose.skywalking.yml down
+# 单独启动：docker compose -f docker-compose.skywalking.yml up -d
+# 停止：    docker compose -f docker-compose.skywalking.yml down
+#
+# UI 宿主端口 18089（容器内仍是 8080）：避开 Nacos 3.x 控制台 8080。
+# 访问：http://localhost:18089    Agent 上报：localhost:11800（gRPC）
+# 端口均可在 .env 覆盖：SW_UI_PORT / SW_OAP_GRPC_PORT / SW_OAP_HTTP_PORT
 # ============================================================
 name: obs-stack
 
 services:
   banyandb:
-    image: apache/skywalking-banyandb:${BANYANDB_VERSION:-0.10.0}
-    container_name: obs-banyandb
+    image: ${REGISTRY_MIRROR:-}apache/skywalking-banyandb:${BANYANDB_VERSION:-0.10.0}
+    container_name: ${CONTAINER_PREFIX:-obs}-banyandb
     restart: unless-stopped
     command: standalone --stream-root-path /root/banyandb/stream --measure-root-path /root/banyandb/measure
     healthcheck:
@@ -19,15 +23,20 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "17912:17912"   # gRPC（OAP 连接）
-      - "17913:17913"   # HTTP / Web UI
+      - "${BANYANDB_GRPC_PORT:-17912}:17912"   # gRPC（OAP 连接）
+      - "${BANYANDB_HTTP_PORT:-17913}:17913"   # HTTP / Web UI
     volumes:
-      - ./data/banyandb:/root/banyandb
+      - ${LOCAL_DATA_DIR:-./data}/banyandb:/root/banyandb
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
   oap:
-    image: apache/skywalking-oap-server:${SW_VERSION:-10.4.0}
-    container_name: obs-oap
+    image: ${REGISTRY_MIRROR:-}apache/skywalking-oap-server:${SW_VERSION:-10.4.0}
+    container_name: ${CONTAINER_PREFIX:-obs}-oap
     restart: unless-stopped
     depends_on:
       banyandb:
@@ -39,28 +48,44 @@ services:
       retries: 30
       start_period: 60s
     ports:
-      - "11800:11800"   # Agent gRPC
-      - "12800:12800"   # 查询 HTTP
+      - "${SW_OAP_GRPC_PORT:-11800}:11800"   # Agent gRPC
+      - "${SW_OAP_HTTP_PORT:-12800}:12800"   # 查询 HTTP
     environment:
       SW_STORAGE: banyandb
       SW_STORAGE_BANYANDB_TARGETS: banyandb:17912
-      JAVA_OPTS: -Xms512m -Xmx2g -XX:MaxDirectMemorySize=512m
+      JAVA_OPTS: ${SW_OAP_JAVA_OPTS:--Xms512m -Xmx2g -XX:MaxDirectMemorySize=512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
   ui:
-    image: apache/skywalking-ui:${SW_VERSION:-10.4.0}
-    container_name: obs-ui
+    image: ${REGISTRY_MIRROR:-}apache/skywalking-ui:${SW_VERSION:-10.4.0}
+    container_name: ${CONTAINER_PREFIX:-obs}-ui
     restart: unless-stopped
     depends_on:
       oap:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "${SW_UI_PORT:-18089}:8080"
     environment:
       SW_OAP_ADDRESS: http://oap:12800
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

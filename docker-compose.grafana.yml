@@ -14,11 +14,11 @@ name: obs-stack
 
 services:
   grafana:
-    image: grafana/grafana:${GRAFANA_VERSION:-latest}
-    container_name: obs-grafana
+    image: ${REGISTRY_MIRROR:-}grafana/grafana:${GRAFANA_VERSION:-13.0.10}
+    container_name: ${CONTAINER_PREFIX:-obs}-grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3002}:3000"   # 本机唯一 Grafana：Loki 日志 + Prometheus 指标。避开电商前端 :3000
+      - "${GRAFANA_PORT:-3002}:3000"   # 本机唯一 Grafana：Loki 日志 + Prometheus 指标。容器内仍是 3000，宿主默认 3002
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -27,10 +27,21 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-Admin13278}
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./data/grafana:/var/lib/grafana
+      - ${LOCAL_DATA_DIR:-./data}/grafana:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks: [obs]
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

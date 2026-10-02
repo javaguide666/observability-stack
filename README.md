@@ -1,39 +1,18 @@
-# 本地开发栈（数据面按需 + 可观测性按需）
+# observability-stack：开发 / 测试环境中间件（Docker Compose）
 
-适用：**MacBook M1（arm64）本地开发**；整套目录原样可迁移到 **Linux x86_64 测试环境**（镜像均为 multi-arch；Nacos 在 ARM 上用 `v3.2.4-slim`）。
+**一软件一个 Compose 文件**（共用项目名 `obs-stack`、网络 `obs-net`、固定容器名 `obs-*`），每个文件都能单独 `docker compose -f docker-compose.<组件>.yml up -d`。主流程只依赖 `docker compose`，Windows / macOS / Linux 通用；`scripts/` 里的 sh 脚本是 Mac / Linux 的可选便捷封装（见文末附注）。
 
-**不需要另起一套目录。** 现有「一软件一个 Compose、共用项目名 `obs-stack` 与网络 `obs-net`」已经适合开发环境：MySQL / Redis / Nacos 与 ClickHouse 走同一网络，后装的组件能直接访问先装的。需要改的是职责，而不是模式——`docker-compose.all.yml` 改为日常开发数据栈，不再一键拉起 SkyWalking / Loki / Grafana。
+## 快速开始
 
-各组件拆成独立 Compose 文件，**默认按需启动，互不强制依赖**（Nacos 单独启动时若 MySQL 尚未定义会跳过 `depends_on`）。
-
-| 组件 | Compose 文件 | 版本 | 角色 | 在 all.yml |
-|---|---|---|---|---|
-| MySQL | `docker-compose.mysql.yml` | 9.7.2 LTS | 开发主库；首次初始化创建 `nacos` / `admin` | 是 |
-| Redis | `docker-compose.redis.yml` | 8.10.1 GA | 缓存 / 锁 | 是 |
-| Nacos | `docker-compose.nacos.yml` | 3.2.4 GA | 注册 / 配置（直连已有 MySQL，无 db-init） | 是 |
-| PostgreSQL | `docker-compose.postgres.yml` | 18.6 | 可选主库 | 是 |
-| ClickHouse | `docker-compose.clickhouse.yml` | 25.8 | 指标 / 日志长期分析库 | 是 |
-| Jenkins | `docker-compose.jenkins.yml` | LTS | CI | 否 |
-| SkyWalking OAP / UI | `docker-compose.skywalking.yml` | 10.4.0 | APM 链路追踪、服务指标 | 否 |
-| BanyanDB | （含在 SkyWalking 文件中） | 0.10.0 | SkyWalking 官方推荐存储 | 否 |
-| 日志（qryn） | `docker-compose.loki.yml` | 3.2.39 | Loki Push / LogQL 搬运层，日志写入已有 ClickHouse 库 `obs_logs` | 否 |
-| ClickVisual | `docker-compose.clickvisual.yml` | 1.0.4 | 日志查询 UI（元数据用已有 MySQL，日志查已有 ClickHouse） | 否 |
-| Grafana | `docker-compose.grafana.yml` | latest | 统一查询（Prometheus 指标 / LogQL / ClickHouse SQL） | 否 |
-| Grafana Alloy | （日志文件的 `logs` profile） | latest | 可选日志采集（Promtail 已 EOL），推到 qryn | 否 |
-| Prometheus | `docker-compose.prometheus.yml` | 3.15.0 | 服务器指标采集与存储 | 否 |
-| Node Exporter | （含在 Prometheus 文件中） | 1.12.1 | 宿主机 CPU / 内存 / 磁盘 / 网络 | 否 |
-
-数据落盘：`DOCKER_DATA_DIR`（默认 `/Users/eric_brewer/.docker/<组件>`）。Grafana / SkyWalking / Prometheus 仍用本目录 `data/`。日志在 ClickHouse 数据目录里，qryn 无状态。
-
-## 一、按需启动
+前置：Docker Engine / Docker Desktop（Compose ≥ 2.20，`docker-compose.all.yml` 用了 `include`）、内存建议 8GB+（只跑数据栈约 4GB）。amd64 / arm64 通用，所有镜像固定 tag。
 
 ```bash
 cd observability-stack
-cp .env.example .env        # 建议修改版本与密码
+cp .env.example .env        # Windows（CMD）：copy .env.example .env；PowerShell：Copy-Item .env.example .env
+                            # .env 可选：不建 .env 时各变量用 compose 文件里的默认值（与模板一致）
 ```
 
 日常开发数据栈（MySQL + Redis + Nacos + PostgreSQL + ClickHouse）：
-
 ```bash
 docker compose -f docker-compose.all.yml up -d
 ```
@@ -43,55 +22,72 @@ docker compose -f docker-compose.all.yml up -d
 ```bash
 docker compose -f docker-compose.mysql.yml up -d
 docker compose -f docker-compose.redis.yml up -d
-docker compose -f docker-compose.nacos.yml up -d   # 需 MySQL 已就绪
+docker compose -f docker-compose.nacos.yml up -d   # 需 MySQL 已就绪（没就绪时 Nacos 会自动重试到连上）
 docker compose -f docker-compose.postgres.yml up -d
 docker compose -f docker-compose.clickhouse.yml up -d
-docker compose -f docker-compose.jenkins.yml up -d
+docker compose -f docker-compose.jenkins.yml up -d --build
 ```
 
 可观测性（与数据栈同一网络，可随时追加）。日志栈复用已有 ClickHouse，先起数据栈或单独起 ClickHouse：
 
 ```bash
 docker compose -f docker-compose.clickhouse.yml up -d
-docker compose -f docker-compose.loki.yml up -d
-docker compose -f docker-compose.skywalking.yml up -d
-docker compose -f docker-compose.grafana.yml up -d
-docker compose -f docker-compose.clickvisual.yml up -d
+docker compose -f docker-compose.loki.yml up -d          # qryn（服务名 loki），日志写入 ClickHouse
+docker compose -f docker-compose.clickvisual.yml up -d   # 日志查询 UI，需 MySQL
+docker compose -f docker-compose.skywalking.yml up -d    # 链路追踪，UI 在 http://localhost:18089
+docker compose -f docker-compose.prometheus.yml up -d    # 服务器指标
+docker compose -f docker-compose.grafana.yml up -d       # http://localhost:3002
 ```
 
-服务器核心指标（Prometheus 抓 node-exporter；看板在 Grafana，文件夹「服务器」）：
+停止：`docker compose -f docker-compose.<组件>.yml down`（保留数据目录；`all.yml` 同理）。
 
-```bash
-docker compose -f docker-compose.prometheus.yml up -d
-docker compose -f docker-compose.grafana.yml up -d
-```
+**已有旧数据的机器**（例如本机旧数据在 `~/.docker/mysql/data`）：`.env` 里必须把 `DOCKER_DATA_DIR` 设为旧目录（如 `DOCKER_DATA_DIR=/Users/<你>/.docker`），否则会在 `./data` 新建空库。
 
-查看 / 停止 **当前文件里的服务**（不会误删其它栈）：
+**MySQL 账号密码在 SQL 里**：`config/mysql/init/01-users.sql` 里写死了 `nacos` / `admin` 账号及密码（开发约定默认值，与 IDEA、K8s dev secret 一致）。该脚本只在数据目录为空时执行一次；要改这两个账号的密码，需同步改 `01-users.sql` 和 `.env` 的 `MYSQL_NACOS_PASSWORD`（Nacos 用它连库），已有数据则需在 MySQL 里 `ALTER USER`。`MYSQL_ROOT_PASSWORD` 由 `.env` 控制，不受影响。
 
-```bash
-docker compose -f docker-compose.mysql.yml ps
-docker compose -f docker-compose.all.yml down
-```
+可用组件文件：`mysql redis postgres clickhouse nacos skywalking loki prometheus grafana clickvisual jenkins`；Alloy（可选日志采集）是 `docker-compose.loki.yml` 里的 `logs` profile：`docker compose -f docker-compose.loki.yml --profile logs up -d`。
 
-## 二、访问入口
+## 一、组件与文件
 
-| 服务 | 地址 | 说明 |
+| 组件 | Compose 文件 | 镜像 tag | 说明 | 备注 |
+|---|---|---|---|---|
+| MySQL | `docker-compose.mysql.yml` | 9.7.2 | 开发主库；首次初始化执行 `config/mysql/init/01-users.sql`（建 `nacos` / `admin`）与 `02-nacos-schema.sql` | all.yml |
+| Redis | `docker-compose.redis.yml` | 8.10.1 | 缓存 / 锁 | all.yml |
+| Nacos | `docker-compose.nacos.yml` | v3.2.4-slim | 注册 / 配置；`nacos-init` 一次性幂等创建控制台 admin | all.yml |
+| PostgreSQL | `docker-compose.postgres.yml` | 18.6-alpine | 可选主库 | all.yml |
+| ClickHouse | `docker-compose.clickhouse.yml` | 25.8 | 指标 / 日志存储 | all.yml |
+| 日志搬运 qryn | `docker-compose.loki.yml` | 3.2.39 | Loki Push / LogQL；可选 Alloy 采集（`alloy`，`--profile logs`） |  |
+| ClickVisual | `docker-compose.clickvisual.yml` | 1.0.4 | 日志查询 UI（元数据复用 MySQL） |  |
+| SkyWalking | `docker-compose.skywalking.yml` | OAP/UI 10.4.0 + BanyanDB 0.10.0 | 链路追踪 |  |
+| Prometheus + node-exporter | `docker-compose.prometheus.yml` | v3.15.0 / v1.12.1 | 服务器指标 |  |
+| Grafana | `docker-compose.grafana.yml` | 13.0.10 | 统一查询（日志 / 指标 / ClickHouse） |  |
+| Jenkins | `docker-compose.jenkins.yml` | 本地构建 wealth-jenkins:lts-ci | CI |  |
+| 聚合 | `docker-compose.all.yml` | — | include：mysql redis nacos postgres clickhouse | — |
+
+**统一约定**：所有端口 / 版本 / 账号 / 数据目录来自 `.env`（模板 `.env.example`，缺省值与模板一致）；`restart: unless-stopped`；日志轮转；有 healthcheck（Alloy 镜像无 shell，例外）；`REGISTRY_MIRROR` 可给全部镜像加前缀；`CONTAINER_PREFIX` / `OBS_NETWORK` 可起第二套隔离环境（默认 `obs` / `obs-net` 不变）。
+数据目录：`DOCKER_DATA_DIR`（默认 `./data`，放 mysql / redis / nacos / postgres / clickhouse / jenkins）与 `LOCAL_DATA_DIR`（默认 `./data`，放 banyandb / prometheus / grafana）。**已有旧数据的机器**：在 `.env` 里把 `DOCKER_DATA_DIR` 指向旧目录（见快速开始），不迁移、不改动数据。
+
+## 二、端口与访问入口
+
+默认值如下，冲突时只改 `.env` 里的变量（Mac / Linux 可用 `scripts/check.sh` 检查冲突项）。
+
+| 服务 | 宿主端口（变量） | 地址 / 说明 |
 |---|---|---|
-| MySQL | localhost:3306 | `nacos` / `admin` / `root`，密码均为 `Admin13278@`；库 `nacos_config` 已建且含 Nacos 3.2.4 表结构 |
-| Redis | localhost:6379 | `requirepass` = `Admin13278@` |
-| Nacos 控制台 | http://localhost:8080 | 默认 `nacos` / `nacos`；客户端 8848 / 9848 |
-| PostgreSQL | localhost:5432 | `admin` / `Admin13278@`，库 `myapp_db` |
-| ClickHouse | http://localhost:8123/ping | HTTP 探活无需登录；查询账号见 `.env`（默认 `default` / `Admin13278`） |
-| Jenkins | http://localhost:18080 | 避开 3000（K8s 电商前端占用）；初始密码见容器日志 |
-| SkyWalking UI | http://localhost:8080 | 与 Nacos 控制台端口冲突，不要同时映射 8080 |
-| ClickVisual | http://localhost:19001 | 日志查询。首次打开 `/install/init` 点一次初始化；账号 `clickvisual` / `clickvisual`。实例 DSN：`clickhouse://default:Admin13278@clickhouse:9000/default?dial_timeout=10s&max_execution_time=60`。日志库在 `cv_logs`：`stdout` 是演示表，`qryn_logs` 是 qryn 写进 `obs_logs` 的日志 |
-| Grafana | http://localhost:3002 | 本机唯一入口（不再另起 :3001）。宿主端口由 `.env` 的 `GRAFANA_PORT` 控制（默认 3002，避开电商前端 :3000）。同一套里：Loki 数据源查 Pod 日志（qryn），Prometheus 数据源查服务器指标，看板在文件夹「服务器」→「服务器核心指标」。账号密码见 `.env`；未启动的数据源会显示异常，可忽略 |
-| Prometheus | http://localhost:9090 | 指标查询与采集状态。`Status → Targets` 里 `node` 为 UP 即 node-exporter 正常。宿主端口由 `PROMETHEUS_PORT` 控制（默认 9090） |
-| Node Exporter | http://localhost:9100/metrics | 宿主机 CPU / 内存 / 负载 / 磁盘 / 网络原文。Mac 上是 Docker Desktop Linux 虚拟机，Linux 上是该机宿主机 |
-| 日志搬运（qryn） | http://localhost:3100/loki/api/v1/labels | 返回 JSON 即正常。兼容 Loki Push / LogQL，数据在 ClickHouse 库 `obs_logs` |
-| BanyanDB | http://localhost:17913 | BanyanDB Web UI |
+| MySQL | 3306（`MYSQL_PORT`） | `root` 密码见 `.env`；`nacos` / `admin` 账号密码在 `config/mysql/init/01-users.sql`（开发约定默认值） |
+| Redis | 6379（`REDIS_PORT`） | `requirepass` 见 `.env` |
+| PostgreSQL | 5432（`POSTGRES_PORT`） | `POSTGRES_USER` / `POSTGRES_DB` 见 `.env` |
+| Nacos | 控制台 8080（`NACOS_CONSOLE_PORT`）· 8848 · 9848 · 9849 | http://localhost:8080 ；账号 `nacos`，初始密码 `NACOS_ADMIN_PASSWORD`（默认 `NacosAdmin`） |
+| **SkyWalking UI** | **18089**（`SW_UI_PORT`） | **http://localhost:18089**（容器内 8080；已避开 Nacos 控制台） |
+| SkyWalking OAP | 11800 gRPC（Agent 上报）· 12800 HTTP | Agent：`-Dskywalking.collector.backend_service=localhost:11800` |
+| BanyanDB | 17912 · 17913 | http://localhost:17913 |
+| ClickHouse | HTTP 8123 · Native 9001 | http://localhost:8123/ping |
+| 日志搬运（qryn） | 3100（`LOKI_PORT`） | http://localhost:3100/loki/api/v1/labels（`/ready` 返回 capabilities JSON，属正常）。Loki 协议入口，日志写入 ClickHouse 库 `obs_logs`，默认保留 `LOG_RETENTION_DAYS=7` 天；K8s dev 的 Alloy 推送到这里 |
+| ClickVisual | 19001（`CLICKVISUAL_PORT`） | 首次打开 `/install/init` 点一次初始化；账号 `clickvisual` / `clickvisual`；ClickHouse 实例 DSN 见 `config/clickvisual/docker.toml`。日志库 `cv_logs`：`stdout` 是演示表，`qryn_logs` 对应 qryn 写入 `obs_logs` 的日志 |
+| Grafana | 3002（`GRAFANA_PORT`） | http://localhost:3002 ，账号密码见 `.env`；避开 K8s 电商前端 :3000 与 K8s 日志 Grafana :3001 |
+| Prometheus / node-exporter | 9090 · 9100 | http://localhost:9090/targets 里 `node` 为 UP 即正常 |
+| Jenkins | 18080（`JENKINS_PORT`）· 50000 | http://localhost:18080 ；初始密码见容器日志 |
 
-端口约定：宿主 `9001`=ClickHouse native，`8123`=ClickHouse HTTP，`3100`=日志搬运，`9090`=Prometheus，`9100`=node-exporter。Nacos 占用 `8080` 时不要再起 SkyWalking UI。
+容器内主机名（同一网络）：`mysql`、`redis`、`nacos`、`postgres`、`clickhouse`、`loki`、`oap`。宿主机或 K8s（`host.docker.internal`）访问用上表端口。
 
 ## 三、接入应用
 
@@ -111,6 +107,8 @@ java -javaagent:/path/to/skywalking-agent/skywalking-agent.jar \
      -jar your-app.jar
 ```
 
+日志方案详见 `obsidian-doc/build_doc/Loki日志，可视化平台搭建.md`（本机 = qryn + ClickHouse + ClickVisual；K8s test/prod = Loki + RustFS）。
+
 日志（可选）：应用或 Alloy 按 Loki Push API 推到 `http://loki:3100/loki/api/v1/push`（宿主机用 `http://localhost:3100`）。qryn 写入 ClickHouse 库 `obs_logs`。查询打开 ClickVisual（http://localhost:19001），实例 DSN 指向同一台 ClickHouse。
 
 把日志文件放进 `./data/host-logs/`，然后
@@ -126,7 +124,7 @@ docker compose -f docker-compose.loki.yml --profile logs up -d
 
 | 项 | 说明 |
 | --- | --- |
-| Compose | `docker-compose.jenkins.yml`（控制台 http://localhost:18080） |
+| Compose | `docker-compose.jenkins.yml`（控制台 http://localhost:18080，端口 `JENKINS_PORT`） |
 | 脚本备份 | 本仓库 `jenkins/`（`Jenkinsfile.wealth`、`scripts/pipeline-wealth.sh`） |
 | 代码源 | GitHub `javaguide666/wealth-freedom{,-web}` / `wealth-ecommerce-web` |
 | 日常 overlay | **dev**（连本机 obs MySQL/Redis/Nacos） |
@@ -134,7 +132,7 @@ docker compose -f docker-compose.loki.yml --profile logs up -d
 
 ```bash
 # 启动 Jenkins（已建议挂载 docker.sock + ~/.kube + ~/.ssh，仅本机开发用）
-docker compose -f docker-compose.jenkins.yml up -d
+docker compose -f docker-compose.jenkins.yml up -d --build
 
 # 手动跑一遍与 Pipeline 相同的脚本（在宿主机验证）
 OVERLAY=dev ./jenkins/scripts/pipeline-wealth.sh
@@ -145,51 +143,62 @@ Job：New Item → Pipeline → Script Path `jenkins/Jenkinsfile.wealth`（SCM �
 
 ---
 
-## 五、迁移到测试环境
-
-数据栈数据在 `DOCKER_DATA_DIR`（本机默认 `/Users/eric_brewer/.docker`）；可观测性数据在本项目 `data/`。配置全部在项目内。
+## 五、测试环境一键全开 / 迁移 / 清理
 
 ```bash
-# 本地：先停已启动的栈，保证数据一致
-docker compose -f docker-compose.all.yml stop
-# 若还起了其它栈，对对应文件同样 stop
+# 测试机（已装 docker engine + compose plugin，Linux / Windows / macOS 均可）
+git clone <本仓库> && cd observability-stack
+cp .env.example .env                  # Windows：copy .env.example .env；按需改密码 / 端口 / DOCKER_DATA_DIR
+# 国内网络拉镜像慢：在 .env 里设 REGISTRY_MIRROR=docker.1ms.run/   （须以 / 结尾）
 
-# 打包（如数据量大可排除 data/，测试环境从零开始）
-cd .. && tar czf obs-stack.tar.gz observability-stack
-
-# 测试机（Linux，已装 docker engine + compose plugin）
-scp obs-stack.tar.gz user@test-host:/opt/
-ssh user@test-host
-cd /opt && tar xzf obs-stack.tar.gz && cd observability-stack
-cp .env.example .env
-# 修改 DOCKER_DATA_DIR、NACOS_VERSION（x86 可用 v3.2.4）、密码
+# 全开（约需 8GB+ 内存；Nacos 在 MySQL 之后，先起数据栈）
 docker compose -f docker-compose.all.yml up -d
+docker compose -f docker-compose.skywalking.yml up -d
+docker compose -f docker-compose.clickhouse.yml -f docker-compose.loki.yml up -d
+docker compose -f docker-compose.prometheus.yml up -d
+docker compose -f docker-compose.grafana.yml up -d
+docker compose -f docker-compose.clickvisual.yml up -d
+docker compose -f docker-compose.jenkins.yml up -d --build      # 可选
+
+# 清理：逐个 down，保留 data/
+docker compose -f docker-compose.jenkins.yml down      # 其余同理，把文件名换成对应组件
+# 彻底重来（会清空数据，谨慎）：先 down，再手动删除 .env 里 DOCKER_DATA_DIR / LOCAL_DATA_DIR 下对应子目录
 ```
 
-迁移要点：
+要点：
 
-- **架构差异无感**：本地 arm64、测试机 x86_64，镜像自动拉取对应架构；Nacos 在 ARM 用 `-slim`。
-- **固定版本**：compose 中除 grafana/jenkins/alloy 外均已固定 tag（qryn 固定 3.2.39）。
-- **端口冲突**：测试机端口冲突时，只改对应 `docker-compose.*.yml` 左侧（宿主侧）端口即可。
-- **MySQL 初始化只跑一次**：`nacos` / `admin` 与 Nacos 表结构仅在数据目录为空时写入。已有数据目录不会重跑 `config/mysql/init/`。
-- **升级为多机 HA**：按生产拓扑拆分（BanyanDB×3、OAP×2、qryn 多副本、ClickHouse 集群 + Keeper）。qryn 无状态，日志在 ClickHouse。
+- **架构无感**：本地 arm64、测试机 x86_64 均自动拉取对应架构；Nacos 用 `-slim`。
+- **初始化幂等**：MySQL 的 `config/mysql/init/` 仅在数据目录为空时执行（`01-users.sql` 建 `nacos` / `admin` 账号，密码写在 SQL 里；`02-nacos-schema.sql` 导 Nacos 表）；已有数据不会被覆盖。`nacos-init` 重复执行无副作用。
+- **改密码**：`MYSQL_ROOT_PASSWORD`、Redis、Postgres、Grafana、ClickHouse 等密码改 `.env` 即可；MySQL 的 `nacos` / `admin` 密码在 `01-users.sql` 里，改它要同步改 `.env` 的 `MYSQL_NACOS_PASSWORD`。ClickHouse 密码还写在 `config/clickvisual/docker.toml` 的 DSN 里，需同步。改完同步 wealth-freedom 的 K8s dev secret / IDEA 配置。
+- 旧目录 `docker/dev`、`docker/nacos`、`docker/PostgreSQL`、`docker/jenkins` 已由本栈替代，请勿再混用两套数据目录。
 
-旧目录 `docker/dev`、`docker/nacos`、`docker/PostgreSQL`、`docker/jenkins` 已由本栈替代，请勿再混用两套数据目录。
+### 附注：Mac / Linux 可选便捷脚本（非必须）
+
+`scripts/` 下的 bash 脚本只是对上述 compose 文件的封装，Windows 不支持，主流程不依赖它们：
+
+```bash
+scripts/init-env.sh [--random]      # 生成 .env；--random 只随机 MySQL root、Redis、Postgres、Nacos、Grafana 等 .env 控制的密码
+scripts/check.sh                    # 自检（Docker/Compose 版本、内存、架构、端口冲突）并打印访问地址表
+scripts/up.sh core|logging|skywalking|metrics|grafana|ci|full|<组件名>   # 按名称启动，自动补依赖并等 healthy；已在运行的默认跳过
+scripts/down.sh <同上>              # 停止，保留数据目录
+```
+
+`init-env.sh` 检测到 `~/.docker/mysql/data` 时会把 `DOCKER_DATA_DIR` 指向 `~/.docker`。`--random` **不会**改 MySQL 的 `nacos` / `admin` 账号密码（它们写在 `01-users.sql` 里），也不改 ClickHouse 密码（写在 `docker.toml` 里）。
 
 ## 六、常见问题
 
-- **Nacos 起不来**：确认 MySQL 已 healthy，且 `nacos_config` 里已有表。全新数据目录用 `docker-compose.mysql.yml` 首次启动即可导入 schema；旧数据目录需自行执行 `config/mysql/init/02-nacos-schema.sql`。Nacos **不会**开机自启（`restart: "no"`），主机重启后需手动 `up -d`。
-- **Nacos 与 SkyWalking 抢 8080**：不要同时启动两者的 8080 映射；Nacos 控制台优先保留 8080。
-- **oap 反复重启**：BanyanDB 尚未就绪，等 `banyandb` healthy 后 OAP 会自动恢复（`restart: unless-stopped` 兜底）；首次启动 OAP 需 1~2 分钟。
-- **日志栈起不来**：先确认 ClickHouse 已 healthy。qryn 启动时会在该实例建库 `obs_logs` 并建表；`CLICKHOUSE_PASSWORD` 里不要含冒号。看日志：`docker compose -f docker-compose.loki.yml logs loki`。
-- **Grafana 里 Loki 数据源红了**：日志栈还没起，或 qryn 还连不上 ClickHouse。补装 `docker-compose.loki.yml` 后刷新。
-- **Grafana 里 Prometheus 数据源红了，或看板无数据**：先起 `docker-compose.prometheus.yml`。打开 http://localhost:9090/targets ，`node` 应为 UP。Mac 上的数字是 Docker Desktop Linux 虚拟机，对不上 macOS 活动监视器属正常。
-- **node-exporter 起不来**：确认 Docker 允许 `pid: host`，以及能只读挂载 `/proc`、`/sys`、`/`。这三项由容器引擎解析，Mac 上指向虚拟机，Linux 上指向宿主机。
-- **BanyanDB 与 OAP 版本不匹配（API 兼容报错）**：到 SkyWalking 官方 Downloads 页核对兼容版本，修改 `.env` 后重新 `up -d`。
-- **M1 内存不足**：Docker Desktop 设置里给容器预留 8G+ 内存；OAP 堆已通过 `JAVA_OPTS` 限制在 2G。只装数据栈时内存占用明显低于全量可观测性。
-- **Grafana 里 ClickHouse 数据源红了**：尚未启动 ClickHouse，属正常；补装 `docker-compose.clickhouse.yml` 后刷新即可。日志查询走 Loki 数据源，不依赖这个 SQL 数据源。不需要该数据源时可删掉 `config/grafana/provisioning/datasources/clickhouse.yml`。
-- **ClickHouse Code 194 / Authentication failed**：25.x 镜像未设 `CLICKHOUSE_PASSWORD` 时会禁止 `default` 远程登录。本仓库已默认 `default` / `Admin13278`（改 `.env` 后需 `docker compose -f docker-compose.clickhouse.yml up -d` 重建容器）。查询示例：`curl 'http://localhost:8123/?user=default&password=Admin13278' --data-binary 'SELECT 1'`。
-- **`docker compose up` 找不到文件**：已取消默认的 `docker-compose.yml`，必须带 `-f` 指定栈文件，避免误装全部。
+- **端口冲突**：在 `.env` 改对应变量（表见上）后重新 `docker compose -f … up -d`（Mac / Linux 可先 `scripts/check.sh` 找出冲突项）。常见：8080（Nacos 控制台）、3000（K8s 电商前端）、3306 / 6379（本机已装 MySQL / Redis）。SkyWalking UI 固定走 18089，不再和 Nacos 抢 8080。
+- **内存不足**：Docker Desktop → Settings → Resources 给 8GB+；只开 core 约 2–3GB。OAP 堆可用 `SW_OAP_JAVA_OPTS` 调小。
+- **镜像拉取失败 / 超时**：在 `.env` 设 `REGISTRY_MIRROR=docker.1ms.run/`（或 `docker.m.daocloud.io/`，须以 `/` 结尾），也可在 Docker Desktop 配置 registry-mirrors（见文末）。
+- **Nacos 起不来**：确认 MySQL 已 healthy。Nacos 带 `restart: unless-stopped`，MySQL 晚于它起来时会自动重连。旧数据目录若没有 Nacos 表，手动执行 `config/mysql/init/02-nacos-schema.sql`。
+- **Nacos 控制台登录失败**：`nacos-init` 只在 admin 尚未初始化时设置密码；已初始化过的库保持原密码。
+- **MySQL 改了 `.env` 密码没生效**：`nacos` / `admin` 账号只在首次初始化时创建，已有数据需在 MySQL 里手动 `ALTER USER`。
+- **oap 反复重启**：BanyanDB 尚未 healthy，等待即可；首次启动 OAP 需 1–2 分钟。BanyanDB 与 OAP 需用官方验证过的版本组合。
+- **日志栈起不来**：先确认 ClickHouse healthy；`CLICKHOUSE_PASSWORD` 不要含冒号。`docker compose -f docker-compose.loki.yml logs loki`。
+- **Grafana 数据源红了**：对应组件（loki / prometheus / clickhouse）没起，补起后刷新；用不到的数据源可从 `config/grafana/provisioning/datasources/` 删掉。
+- **node-exporter**：需要 Docker 允许 `pid: host` 与只读挂载 `/proc`、`/sys`、`/`；Mac 上采到的是 Docker Desktop 虚拟机。
+- **Jenkins 挂载目录**：默认挂 `~/.kube`、`~/.ssh`、`~/gitee` 与 `docker.sock`，路径不同在 `.env` 设 `JENKINS_KUBE_DIR` / `JENKINS_SSH_DIR` / `JENKINS_WORKSPACE_DIR` / `DOCKER_SOCK`。
+- **`docker compose up` 找不到文件**：没有默认的 `docker-compose.yml`，必须 `-f` 指定组件文件。
 
 ## 七、镜像加速配置
 ```

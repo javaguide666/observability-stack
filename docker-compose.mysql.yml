@@ -1,31 +1,34 @@
 # ============================================================
-# MySQL 9.7 LTS：开发主库（首次启动创建 nacos / admin）
+# MySQL 9.7 LTS：开发主库（首次初始化创建 nacos_config 库与 nacos / admin 账号）
 #
-# 启动：docker compose -f docker-compose.mysql.yml up -d
-# 停止：docker compose -f docker-compose.mysql.yml down
+# 单独启动：docker compose -f docker-compose.mysql.yml up -d
+# 停止：    docker compose -f docker-compose.mysql.yml down
+# 变量均来自 .env（见 .env.example）；无 .env 时使用下面的默认值。
+# 初始化脚本 config/mysql/init/（01-users.sql、02-nacos-schema.sql）仅在数据目录为空时执行；已有数据不会被覆盖。
+# nacos / admin 账号及密码写在 01-users.sql 里（开发约定默认值）；改它们的密码需同步改该 SQL 与 .env 的 MYSQL_NACOS_PASSWORD。
 # ============================================================
 name: obs-stack
 
 services:
   mysql:
-    image: mysql:${MYSQL_VERSION:-9.7.2}
-    container_name: obs-mysql
+    image: ${REGISTRY_MIRROR:-}mysql:${MYSQL_VERSION:-9.7.2}
+    container_name: ${CONTAINER_PREFIX:-obs}-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Admin13278@}
       MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: nacos_config
-      TZ: Asia/Shanghai
+      TZ: ${TZ:-Asia/Shanghai}
     command:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --lower_case_table_names=1
       --explicit-defaults-for-timestamp=ON
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/mysql/data:/var/lib/mysql
-      - ${DOCKER_DATA_DIR:-/Users/eric_brewer/.docker}/mysql/conf:/etc/mysql/conf.d
+      - ${DOCKER_DATA_DIR:-./data}/mysql/data:/var/lib/mysql
+      - ${DOCKER_DATA_DIR:-./data}/mysql/conf:/etc/mysql/conf.d
       - ./config/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
@@ -42,5 +45,5 @@ services:
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge

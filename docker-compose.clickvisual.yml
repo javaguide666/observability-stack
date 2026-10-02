@@ -14,8 +14,8 @@ name: obs-stack
 services:
   # 一次性任务：在已有 MySQL 上建元数据库。MySQL 在另一个 compose 文件里，这里不能 depends_on。
   clickvisual-init:
-    image: mysql:${MYSQL_VERSION:-9.7.2}
-    container_name: obs-clickvisual-init
+    image: ${REGISTRY_MIRROR:-}mysql:${MYSQL_VERSION:-9.7.2}
+    container_name: ${CONTAINER_PREFIX:-obs}-clickvisual-init
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Admin13278@}
     entrypoint: ["/bin/sh", "-c"]
@@ -35,17 +35,28 @@ services:
     restart: "no"
 
   clickvisual:
-    image: clickvisual/clickvisual:${CLICKVISUAL_VERSION:-1.0.4}
-    container_name: obs-clickvisual
+    image: ${REGISTRY_MIRROR:-}clickvisual/clickvisual:${CLICKVISUAL_VERSION:-1.0.4}
+    container_name: ${CONTAINER_PREFIX:-obs}-clickvisual
     restart: unless-stopped
     depends_on:
       clickvisual-init:
         condition: service_completed_successfully
     ports:
-      - "19001:19001"
+      - "${CLICKVISUAL_PORT:-19001}:19001"
     environment:
       EGO_CONFIG_PATH: /clickvisual/config/docker.toml
       EGO_LOG_WRITER: stderr
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:19001/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     volumes:
       # 只覆盖这一份配置，镜像里的 resource.yaml / rbac.conf 仍可用。
       - ./config/clickvisual/docker.toml:/clickvisual/config/docker.toml:ro
@@ -53,5 +64,5 @@ services:
 
 networks:
   obs:
-    name: obs-net
+    name: ${OBS_NETWORK:-obs-net}
     driver: bridge
