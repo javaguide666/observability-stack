@@ -34,6 +34,8 @@ REPO_FULL_SHA=""
 
 export JAVA_HOME="${JAVA_HOME:-/opt/java/jdk-25}"
 export PATH="${JAVA_HOME}/bin:/opt/maven/bin:/usr/local/bin:${PATH:-/usr/bin}"
+# 前端 Dockerfile 的 RUN --mount=type=cache 依赖 BuildKit
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
 GH_FREEDOM="${GH_FREEDOM:-git@github.com:javaguide666/wealth-freedom.git}"
 GH_WEB="${GH_WEB:-git@github.com:javaguide666/wealth-freedom-web.git}"
@@ -186,13 +188,48 @@ resolve_sha() {
   echo "$full"
 }
 
+mark_checkout() {
+  local dir="$1" full
+  [[ -n "${BUILD_NUMBER:-}" ]] || return 0
+  full=$(git -C "$dir" rev-parse HEAD)
+  printf '%s %s %s\n' "$BUILD_NUMBER" "$full" "$BRANCH" > "${WORKSPACE:-.}/.wealth-checkout-${MODULE}"
+}
+
+fetch_origin_branch() {
+  local dir="$1" branch="$2"
+  local ssh="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}"
+  GIT_SSH_COMMAND="$ssh" git -C "$dir" fetch origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" \
+    || GIT_SSH_COMMAND="$ssh" git -C "$dir" fetch origin "$branch"
+}
+
 clone_or_update() {
   local url="$1" dir="$2" branch="$3" sha="${4:-}"
-  local full detected
+  local full detected stamp sbuild="" ssha="" sbranch="" head=""
   branch="${branch:-main}"
+  stamp="${WORKSPACE:-.}/.wealth-checkout-${MODULE}"
+
+  # 同一次构建的第二遍（Resolve source 已经同步过）：不再 fetch
+  if [[ -n "${BUILD_NUMBER:-}" && -f "$stamp" && -d "$dir/.git" ]]; then
+    read -r sbuild ssha sbranch < "$stamp" || true
+    head=$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)
+    if [[ "$sbuild" == "$BUILD_NUMBER" && -n "$ssha" && "$head" == "$ssha" ]]; then
+      echo "==> 本构建已同步 $(basename "$dir") @ ${ssha:0:12}，跳过再次 fetch"
+      if [[ -n "$sbranch" ]]; then BRANCH="$sbranch"; fi
+      return 0
+    fi
+  fi
+
   if [[ -d "$dir/.git" ]]; then
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
-      git -C "$dir" fetch --all --prune
+    if [[ -n "$sha" ]] && git -C "$dir" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+      echo "==> 本地已有 commit ${sha:0:12}，跳过 fetch"
+    else
+      echo "==> fetch origin ${branch}"
+      fetch_origin_branch "$dir" "$branch"
+      if [[ -n "$sha" ]] && ! git -C "$dir" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+        GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
+          git -C "$dir" fetch origin "$sha" || true
+      fi
+    fi
   else
     mkdir -p "$(dirname "$dir")"
     if [[ -n "$sha" ]]; then
@@ -204,13 +241,16 @@ clone_or_update() {
       GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git clone "$url" "$dir"
     fi
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
-      git -C "$dir" fetch --all --prune || true
   fi
 
   if [[ -n "$sha" ]]; then
-    git -C "$dir" fetch origin "$sha" 2>/dev/null || true
-    git -C "$dir" fetch origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" 2>/dev/null || true
+    if ! git -C "$dir" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
+        git -C "$dir" fetch origin "$sha" || true
+    fi
+    if ! git -C "$dir" rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
+      fetch_origin_branch "$dir" "$branch" || true
+    fi
     full=$(resolve_sha "$dir" "$sha")
     detected=$(detect_branch_for_sha "$dir" "$full" "$branch" || true)
     if [[ -n "$detected" ]]; then
@@ -221,6 +261,7 @@ clone_or_update() {
     fi
     echo "==> checkout $(basename "$dir") @ ${full} (requested ${sha})"
     git -C "$dir" checkout --detach "$full"
+    mark_checkout "$dir"
   else
     if ! git -C "$dir" rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
       GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
@@ -231,6 +272,7 @@ clone_or_update() {
     echo "==> checkout $(basename "$dir") branch=${branch} @ origin/${branch}"
     git -C "$dir" checkout -B "$branch" "origin/${branch}"
     git -C "$dir" reset --hard "origin/${branch}"
+    mark_checkout "$dir"
   fi
 }
 
@@ -260,18 +302,64 @@ pick_jar() {
   echo "$jar"
 }
 
-# 写构建元数据，供 Job 的 Groovy 写入构建描述（只含分支名/SHA/tag，无敏感信息）
+# 含该 SHA 的其它分支（去掉本次构建分支）。成功返回逗号分隔或 "-"；查不到则不输出。
+# 同一构建里脚本会跑两遍（解析 SHA / 真正构建），按 SHA 复用，避免再 fetch 一次。
+capture_related() {
+  local sha="$1" primary="$2"
+  local repo="" script out cache line extras=""
+  case "${MOD_REPO[$MODULE]:-}" in
+    freedom) repo=wealth-freedom ;;
+    web) repo=wealth-freedom-web ;;
+    mall) repo=wealth-ecommerce-web ;;
+  esac
+  if [[ -z "$repo" || ! "$sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    return 0
+  fi
+  cache="${WORKSPACE:-.}/.wealth-related-cache"
+  if [[ -f "$cache" ]] && [[ "$(head -n 1 "$cache" 2>/dev/null || true)" == "$sha" ]]; then
+    sed -n '2p' "$cache"
+    return 0
+  fi
+  script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/resolve-commit.sh"
+  out="${WORKSPACE:-.}/.wealth-resolve.json"
+  # RESOLVE_UPDATE=0：镜像里已有该 SHA 就不再 remote update。点「刷新关联分支」的 Job 仍默认会刷新。
+  RESOLVE_UPDATE=0 SHA="$sha" REPO="$repo" RESOLVE_OUT="$out" bash "$script" >/dev/null 2>&1 || true
+  if [[ ! -f "${out}.branches" ]]; then
+    echo "WARN: 关联分支未写入（识别失败），构建继续" >&2
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line//$'\r'/}"
+    [[ -z "$line" || "$line" == "$primary" ]] && continue
+    [[ "$line" =~ ^[A-Za-z0-9_./-]+$ ]] || continue
+    if [[ -z "$extras" ]]; then extras="$line"; else extras="${extras},${line}"; fi
+  done < "${out}.branches"
+  [[ -z "$extras" ]] && extras="-"
+  printf '%s\n%s\n' "$sha" "$extras" > "$cache"
+  printf '%s' "$extras"
+}
+
+# 写构建元数据，供 Job 的 Groovy 写入构建描述（只含分支名/SHA/tag/关联分支，无敏感信息）
 write_meta() {
-  local branch="$1" sha="$2" tag="$3" out
+  local branch="$1" sha="$2" tag="$3" related="${4-}" out dest
   out="${WORKSPACE:-.}/.wealth-meta-${MODULE}"
+  related="$(printf '%s' "$related" | tr -d '\r\n')"
   {
     printf 'MODULE=%s\n' "$MODULE"
     printf 'MODE=%s\n' "$MODE"
     printf 'BRANCH=%s\n' "$(printf '%s' "$branch" | tr -d '\r\n')"
     printf 'SHA=%s\n' "$sha"
     printf 'IMAGE_TAG=%s\n' "$tag"
+    if [[ -n "$related" ]]; then
+      printf 'RELATED=%s\n' "$related"
+    fi
   } > "$out"
-  echo "==> 构建元数据 分支=${branch} | SHA ${sha} | tag ${tag} → ${out}"
+  echo "==> 构建元数据 分支=${branch} | SHA ${sha} | tag ${tag}${related:+ | 关联分支 ${related}} → ${out}"
+  # 控制台历史直接读这个文件；不依赖 Jenkins 重新加载 Job 里的描述模板
+  if [[ -n "$related" && -n "${JOB_NAME:-}" && -n "${BUILD_NUMBER:-}" ]]; then
+    dest="${JENKINS_HOME:-/var/jenkins_home}/userContent/wealth-data/related/${JOB_NAME}"
+    mkdir -p "$dest" 2>/dev/null && printf '%s\n' "$related" > "${dest}/${BUILD_NUMBER}.txt" || true
+  fi
 }
 
 # 读镜像上的 wealth.git.* 标签（build-deploy 时写入）；旧镜像没有标签则返回 unknown
@@ -542,7 +630,7 @@ fi
 stage 1 checkout
 prepare_repos
 resolve_auto_tag
-write_meta "$META_BRANCH" "$REPO_FULL_SHA" "$IMAGE_TAG"
+write_meta "$META_BRANCH" "$REPO_FULL_SHA" "$IMAGE_TAG" "$(capture_related "$REPO_FULL_SHA" "$META_BRANCH")"
 if [[ "$PREPARE_ONLY" == "1" ]]; then
   echo "==> PREPARE_ONLY=1：已解析分支与 SHA，不构建不部署"
   exit 0

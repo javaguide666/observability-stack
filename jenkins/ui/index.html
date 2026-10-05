@@ -66,7 +66,7 @@
             <select name="BRANCH" id="branch"></select>
           </label>
           <label>
-            <span>完整 Commit（可选）</span>
+            <span>完整 GIT_SHA（可选）</span>
             <input name="GIT_SHA" id="git-sha" type="text" spellcheck="false" placeholder="40 位 SHA；填写后自动识别分支，可不改上面的分支" />
           </label>
           <p class="hint" id="sha-hint">留空 = 构建所选分支最新代码。填完整 SHA 后，构建脚本会 fetch 该 commit 并自动选择所属分支。</p>

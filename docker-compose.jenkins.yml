@@ -22,8 +22,11 @@ services:
       PATH: /opt/java/jdk-25/bin:/opt/maven/bin:/usr/local/bin:/opt/java/openjdk/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # 放开 userContent 的默认 CSP（默认 sandbox + default-src 'none' 会禁掉脚本和 XHR，新控制台无法运行）。
       # 仅允许同源脚本/请求；Element Plus 运行时需要内联 style。
+      # allow-popups：否则「Jenkins 原生页面」「在 Jenkins 打开」这类 target=_blank 点击无反应。
+      # allow-popups-to-escape-sandbox：新开的 Jenkins 页面不再继承这份沙箱。
+      # allow-top-navigation-by-user-activation：弹窗被拦截时可以改在当前页打开。
       JAVA_OPTS: >-
-        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts allow-same-origin; default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
+        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-downloads; default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
     ports:
       - "${JENKINS_PORT:-18080}:8080"
       - "${JENKINS_AGENT_PORT:-50000}:50000"

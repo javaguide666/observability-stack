@@ -1,0 +1,54 @@
+/*
+ * 设计令牌（design tokens）
+ * 取自现有原生控制台 jenkins/ui/styles.css 与 jenkins-theme.css，保持视觉一致：
+ * 黑蓝底 #0e141b、卡片 #1b2633、描边 #2a3a4d、强调蓝 #3d9cf0、成功 #3dd68c / 警告 #e6b450 / 失败 #f07178。
+ */
+:root {
+  /* 颜色 */
+  --wc-bg: #0e141b;
+  --wc-bg-elev: #151d27;
+  --wc-card: #1b2633;
+  --wc-card-active: #1d3348; /* .tab.active / .login-banner */
+  --wc-chip-bg: #223246; /* .chip */
+  --wc-line: #2a3a4d;
+  --wc-text: #e7eef6;
+  --wc-muted: #8fa3b8;
+  --wc-accent: #3d9cf0;
+  --wc-accent-2: #2f7fc7;
+  --wc-on-accent: #061018; /* .btn.primary 文字色 */
+  --wc-ok: #3dd68c;
+  --wc-warn: #e6b450;
+  --wc-bad: #f07178;
+  --wc-ok-bg: #163528;
+  --wc-bad-bg: #3a1c22;
+  --wc-warn-bg: #3a2e16;
+  --wc-idle: #5b6b7e;
+
+  /* 圆角 */
+  --wc-radius: 12px;
+  --wc-radius-md: 10px;
+  --wc-radius-sm: 8px;
+  --wc-radius-pill: 999px;
+
+  /* 间距 */
+  --wc-space-1: 4px;
+  --wc-space-2: 8px;
+  --wc-space-3: 12px;
+  --wc-space-4: 16px;
+  --wc-space-5: 20px;
+  --wc-space-6: 24px;
+  --wc-space-7: 28px;
+
+  /* 字体 */
+  --wc-font: 'PingFang SC', 'IBM Plex Sans', 'Noto Sans SC', -apple-system, 'Segoe UI', sans-serif;
+  --wc-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 阴影（克制） */
+  --wc-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  --wc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  /* 布局 */
+  --wc-sidebar-w: 320px;
+  --wc-console-w: 392px;
+  --wc-topbar-h: 64px;
+}

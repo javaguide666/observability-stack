@@ -14,7 +14,7 @@ pipeline {
     string(name: 'REGISTRY', defaultValue: '', description: '测试/生产仓库前缀，本机留空')
     string(name: 'IMAGE_TAG', defaultValue: 'auto', description: 'auto 或历史 tag')
     string(name: 'BRANCH', defaultValue: 'main', description: 'wealth-ecommerce-web 分支')
-    string(name: 'GIT_SHA', defaultValue: '', description: '完整 Commit；填写后自动识别分支，空=分支最新')
+    string(name: 'GIT_SHA', defaultValue: '', description: '完整 GIT_SHA；填写后自动识别分支，空=分支最新')
   }
   environment {
     WORKSPACE_ROOT = "${env.WORKSPACE}/repos"

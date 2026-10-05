@@ -51,6 +51,12 @@ emit() {
   body="${body}}"
   mkdir -p "$(dirname "$OUT")"
   printf '%s\n' "$body" >"${OUT}.tmp" && mv "${OUT}.tmp" "$OUT"
+  # 供构建脚本保存「关联分支」；识别失败不写，避免把失败当成「没有其它分支」
+  if [[ -z "$err" ]]; then
+    printf '%s\n' "$sorted" > "${OUT}.branches"
+  else
+    rm -f "${OUT}.branches"
+  fi
   printf 'repo=%s sha=%s exists=%s preferred=%s%s\n' "$(printf '%s' "$REPO" | tr -cd 'A-Za-z0-9_.-')" "${sha:-n/a}" "$exists" \
     "$(printf '%s' "$first" | tr -cd 'A-Za-z0-9_./-')" "${err:+ error=$err}" >"$DESC_OUT"
   echo "==> resolve.json:"
@@ -124,6 +130,11 @@ if [[ ! -d "$GITDIR" ]]; then
     fi
   fi
 else
+  # 构建路径传入 RESOLVE_UPDATE=0：对象已在本地镜像时跳过 remote update（常要几十秒）
+  if [[ "${RESOLVE_UPDATE:-1}" != "1" ]] && git -C "$GITDIR" cat-file -e "${SHA_LC}^{commit}" 2>/dev/null; then
+    echo "==> 镜像中已有 ${SHA_LC}，跳过远端刷新"
+    FETCHED=true
+  else
   SRC="$(cat "$MARKER" 2>/dev/null || echo github)"
   if [[ "$SRC" == "local" ]] && tmo 20 git ls-remote "$GH_URL" HEAD >/dev/null 2>&1; then
     git -C "$GITDIR" remote set-url origin "$GH_URL" && echo github >"$MARKER" && SRC=github
@@ -139,6 +150,7 @@ else
     # 本机回退：从 /gitee 只读拉取（对 /gitee 无写入）
     git -c safe.directory='*' -C "$GITDIR" remote update --prune >/dev/null 2>&1 \
       || echo "WARN: 本机仓库刷新失败，使用已有镜像" >&2
+  fi
   fi
 fi
 

@@ -2,18 +2,21 @@
 .wealth-ci-banner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 4px 0 12px;
   margin: 0;
-  background: #151d27;
-  color: #e7eef6;
-  border-bottom: 1px solid #2a3a4d;
+  background: transparent;
   font-size: 14px;
 }
 .wealth-ci-banner a {
-  color: #3d9cf0;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #151d27;
+  color: #e7eef6;
   font-weight: 600;
+  text-decoration: none;
 }
 
 #page-header .page-header__brand {

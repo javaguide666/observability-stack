@@ -23,6 +23,9 @@ bin/
 rebel.xml
 
 data/
+cache/
+# Jenkins 镜像构建时下载 docker/kubectl/maven，不提交二进制和分支缓存
+jenkins/cache/
 
 ### 本地环境变量（含密码）###
 .env

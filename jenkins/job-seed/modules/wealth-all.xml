@@ -57,7 +57,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>GIT_SHA</name>
-          <description>完整 Commit。全量时三仓 SHA 必须相同，否则请用单模块；填写后自动识别分支</description>
+          <description>完整 GIT_SHA。全量时三仓 SHA 必须相同，否则请用单模块；填写后自动识别分支</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>

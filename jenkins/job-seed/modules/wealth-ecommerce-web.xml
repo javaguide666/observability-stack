@@ -60,7 +60,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>GIT_SHA</name>
-          <description>完整 Commit（40 位或 7+）。填写后自动识别分支，BRANCH 可保持默认；空=分支最新</description>
+          <description>完整 GIT_SHA（40 位或 7+）。填写后自动识别分支，BRANCH 可保持默认；空=分支最新</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -88,7 +88,7 @@
     def i = l.indexOf(&apos;=&apos;)
     if (i &gt; 0) { m[l.substring(0, i)] = l.substring(i + 1).trim() }
   }
-  currentBuild.description = &quot;分支 ${m.BRANCH} | SHA ${m.SHA} | tag ${m.IMAGE_TAG} | MODULE=${mod} MODE=${m.MODE} OVERLAY=${params.OVERLAY} BRANCH=${m.BRANCH} SHA=${m.SHA} IMAGE_TAG=${m.IMAGE_TAG}&quot;
+  currentBuild.description = &quot;分支 ${m.BRANCH} | SHA ${m.SHA} | tag ${m.IMAGE_TAG} | MODULE=${mod} MODE=${m.MODE} OVERLAY=${params.OVERLAY} BRANCH=${m.BRANCH} SHA=${m.SHA} IMAGE_TAG=${m.IMAGE_TAG}${m.RELATED ? ' RELATED=' + m.RELATED : ''}&quot;
 }
 
 pipeline {

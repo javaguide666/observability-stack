@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 宿主机预下载 CI 工具到 jenkins/cache/，供 Dockerfile COPY（规避 build 内 TLS 抖动）
-# 注意：JDK25 已改由 Dockerfile 多阶段 FROM eclipse-temurin:25-jdk 复制；jdk25.tar.gz 可选
+# 可选：在宿主机预下载 CI 工具。镜像构建已改为 Dockerfile 内下载并用层缓存复用，
+# 正常 `docker compose -f docker-compose.jenkins.yml up -d --build` 不需要跑本脚本。
+# 产物在 jenkins/cache/，不要提交到 git。JDK 由 Dockerfile 的 Temurin 阶段提供。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="$ROOT/cache"

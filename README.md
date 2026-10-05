@@ -28,6 +28,8 @@ docker compose -f docker-compose.clickhouse.yml up -d
 docker compose -f docker-compose.jenkins.yml up -d --build
 ```
 
+构建 Jenkins 镜像时会按 CPU 架构下载 docker、buildx、kubectl、maven。这一层没有变化时直接复用，这些文件不用提交到 git。
+
 可观测性（与数据栈同一网络，可随时追加）。日志栈复用已有 ClickHouse，先起数据栈或单独起 ClickHouse：
 
 ```bash
@@ -134,6 +136,7 @@ docker compose -f docker-compose.loki.yml --profile logs up -d
 
 ```bash
 # 启动 Jenkins（已建议挂载 docker.sock + ~/.kube + ~/.ssh，仅本机开发用）
+# 镜像内的 docker / kubectl / maven 在本次构建中下载；Dockerfile 那一层有缓存就不再下载
 docker compose -f docker-compose.jenkins.yml up -d --build
 
 # 手动跑一遍与 Pipeline 相同的脚本（在宿主机验证）

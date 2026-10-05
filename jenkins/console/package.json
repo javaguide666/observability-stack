@@ -1,0 +1,32 @@
+{
+  "name": "wealth-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Wealth CI 独立控制台（Jenkins 前端原型：Vue 3 + Vite + TypeScript + Element Plus）",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "type-check": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "element-plus": "^2.11.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "~5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^3.0.0"
+  }
+}

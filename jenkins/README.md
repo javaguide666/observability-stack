@@ -3,7 +3,7 @@
 控制台（推荐）：http://localhost:18080/userContent/wealth/
 
 - 选模块 + 选分支 → 打最新代码
-- 填完整 Commit → 自动识别分支再构建
+- 填完整 GIT_SHA → 自动识别分支再构建
 - 「启动历史版本」→ 最近 10 个镜像 tag 一键回放（不重新编译）
 
 - **推荐**：按模块 Job（`wealth-gateway` … `wealth-ecommerce-web`）

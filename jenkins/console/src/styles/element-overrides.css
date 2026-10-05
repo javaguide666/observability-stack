@@ -1,0 +1,156 @@
+/*
+ * 在 Element Plus 暗色变量（html.dark）之上，用 tokens.css 的令牌覆盖，
+ * 让 Element Plus 组件与原生控制台 jenkins/ui 的黑色风格一致。
+ */
+html.dark {
+  --el-font-family: var(--wc-font);
+  --el-font-size-base: 14px;
+  --el-border-radius-base: var(--wc-radius-sm);
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: var(--wc-radius-pill);
+
+  --el-bg-color: var(--wc-bg);
+  --el-bg-color-page: var(--wc-bg);
+  --el-bg-color-overlay: var(--wc-card);
+  --el-text-color-primary: var(--wc-text);
+  --el-text-color-regular: var(--wc-text);
+  --el-text-color-secondary: var(--wc-muted);
+  --el-text-color-placeholder: #627489;
+  --el-text-color-disabled: #4f5f72;
+  --el-border-color: var(--wc-line);
+  --el-border-color-light: var(--wc-line);
+  --el-border-color-lighter: #223244;
+  --el-border-color-extra-light: #1d2b3a;
+  --el-border-color-hover: #3c5069;
+  --el-fill-color: var(--wc-card);
+  --el-fill-color-light: #1f2c3b;
+  --el-fill-color-lighter: var(--wc-bg-elev);
+  --el-fill-color-blank: var(--wc-bg);
+  --el-mask-color: rgba(6, 12, 18, 0.72);
+  --el-box-shadow: var(--wc-shadow);
+  --el-box-shadow-light: var(--wc-shadow-sm);
+
+  --el-color-primary: var(--wc-accent);
+  --el-color-primary-light-3: #4d8fc9;
+  --el-color-primary-light-5: #3a6b99;
+  --el-color-primary-light-7: #2b4d6c;
+  --el-color-primary-light-8: #243f58;
+  --el-color-primary-light-9: var(--wc-card-active);
+  --el-color-primary-dark-2: var(--wc-accent-2);
+  --el-color-success: var(--wc-ok);
+  --el-color-success-light-9: var(--wc-ok-bg);
+  --el-color-warning: var(--wc-warn);
+  --el-color-warning-light-9: var(--wc-warn-bg);
+  --el-color-danger: var(--wc-bad);
+  --el-color-danger-light-9: var(--wc-bad-bg);
+  --el-color-error: var(--wc-bad);
+  --el-color-info: var(--wc-muted);
+}
+
+/* 主按钮：与 .btn.primary 一致（蓝底深字） */
+html.dark .el-button--primary {
+  --el-button-text-color: var(--wc-on-accent);
+  --el-button-bg-color: var(--wc-accent);
+  --el-button-border-color: var(--wc-accent);
+  --el-button-hover-text-color: var(--wc-on-accent);
+  --el-button-hover-bg-color: #5aaef5;
+  --el-button-hover-border-color: #5aaef5;
+  --el-button-active-text-color: var(--wc-on-accent);
+  --el-button-active-bg-color: var(--wc-accent-2);
+  --el-button-active-border-color: var(--wc-accent-2);
+  --el-button-disabled-text-color: var(--wc-on-accent);
+  --el-button-disabled-bg-color: var(--wc-accent);
+  --el-button-disabled-border-color: var(--wc-accent);
+  font-weight: 600;
+}
+html.dark .el-button--primary.is-disabled {
+  opacity: 0.45;
+}
+html.dark .el-button--danger {
+  --el-button-text-color: #1c0b0d;
+  --el-button-bg-color: var(--wc-bad);
+  --el-button-border-color: var(--wc-bad);
+  --el-button-hover-text-color: #1c0b0d;
+  --el-button-hover-bg-color: #f58b91;
+  --el-button-hover-border-color: #f58b91;
+  --el-button-disabled-text-color: #1c0b0d;
+  --el-button-disabled-bg-color: var(--wc-bad);
+  --el-button-disabled-border-color: var(--wc-bad);
+  font-weight: 600;
+}
+html.dark .el-button:not(.el-button--primary):not(.el-button--danger):not(.is-text):not(.is-link) {
+  --el-button-bg-color: var(--wc-card);
+  --el-button-border-color: var(--wc-line);
+  --el-button-hover-bg-color: var(--wc-card-active);
+  --el-button-hover-border-color: var(--wc-accent);
+  --el-button-hover-text-color: var(--wc-text);
+}
+
+/* 输入框 / 下拉：底色用 --wc-bg，像原生页面的 input */
+html.dark .el-input__wrapper,
+html.dark .el-select__wrapper,
+html.dark .el-textarea__inner {
+  background-color: var(--wc-bg);
+  box-shadow: 0 0 0 1px var(--wc-line) inset;
+}
+html.dark .el-input__wrapper:hover,
+html.dark .el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px #3c5069 inset;
+}
+html.dark .el-input__wrapper.is-focus,
+html.dark .el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--wc-accent) inset;
+}
+
+/* 分段选择器：选中项用 card-active + 强调色描边 */
+html.dark .el-segmented {
+  --el-segmented-bg-color: var(--wc-bg);
+  --el-segmented-item-selected-bg-color: var(--wc-card-active);
+  --el-segmented-item-selected-color: var(--wc-text);
+  --el-segmented-color: var(--wc-muted);
+  --el-segmented-item-hover-color: var(--wc-text);
+  --el-segmented-item-hover-bg-color: var(--wc-card);
+  border: 1px solid var(--wc-line);
+  padding: 3px;
+  border-radius: var(--wc-radius-md);
+}
+html.dark .el-segmented__item-selected {
+  border: 1px solid var(--wc-accent);
+  box-shadow: none;
+}
+
+html.dark .el-dialog {
+  background: var(--wc-card);
+  border: 1px solid var(--wc-line);
+  border-radius: var(--wc-radius);
+  box-shadow: var(--wc-shadow);
+}
+html.dark .el-message-box {
+  background: var(--wc-card);
+  border: 1px solid var(--wc-line);
+  border-radius: var(--wc-radius);
+}
+html.dark .el-popper.is-dark {
+  background: #0a0f15;
+  border-color: var(--wc-line);
+  color: var(--wc-text);
+}
+html.dark .el-popper.is-dark .el-popper__arrow::before {
+  background: #0a0f15;
+  border-color: var(--wc-line);
+}
+html.dark .el-select-dropdown,
+html.dark .el-popper.is-light {
+  background: var(--wc-card);
+  border-color: var(--wc-line);
+}
+html.dark .el-select-dropdown__item.is-selected {
+  color: var(--wc-accent);
+}
+html.dark .el-progress-bar__outer {
+  background-color: #0e141b;
+}
+html.dark .el-switch.is-checked .el-switch__core {
+  background-color: var(--wc-accent);
+  border-color: var(--wc-accent);
+}

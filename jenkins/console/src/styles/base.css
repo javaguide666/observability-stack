@@ -1,0 +1,78 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+body {
+  background: var(--wc-bg);
+  color: var(--wc-text);
+  font-family: var(--wc-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--wc-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+code,
+.mono {
+  font-family: var(--wc-font-mono);
+  font-size: 12px;
+}
+.muted {
+  color: var(--wc-muted);
+}
+.hint {
+  color: var(--wc-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: var(--wc-space-2) 0 0;
+}
+
+/* 通用卡片 */
+.wc-card {
+  background: var(--wc-card);
+  border: 1px solid var(--wc-line);
+  border-radius: var(--wc-radius);
+  box-shadow: var(--wc-shadow-sm);
+}
+.wc-section-title {
+  margin: 0 0 var(--wc-space-3);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wc-muted);
+}
+
+/* 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2f4157 transparent;
+}
+
+/* 状态点 + 脉冲 */
+@keyframes wc-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(230, 180, 80, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(230, 180, 80, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(230, 180, 80, 0);
+  }
+}
+@keyframes wc-blink {
+  50% {
+    opacity: 0;
+  }
+}
