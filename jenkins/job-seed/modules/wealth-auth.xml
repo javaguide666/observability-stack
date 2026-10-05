@@ -85,10 +85,43 @@
     </org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
-    <script>pipeline {
+    <script>def wealthDesc(String mod) {
+  def mf = &quot;${env.WORKSPACE}/.wealth-meta-${mod}&quot;
+  if (!fileExists(mf)) { return }
+  def m = [:]
+  for (l in readFile(mf).trim().split(&apos;\n&apos;)) {
+    def i = l.indexOf(&apos;=&apos;)
+    if (i &gt; 0) { m[l.substring(0, i)] = l.substring(i + 1).trim() }
+  }
+  currentBuild.description = &quot;分支 ${m.BRANCH} | SHA ${m.SHA} | tag ${m.IMAGE_TAG} | MODULE=${mod} MODE=${m.MODE} OVERLAY=${params.OVERLAY} BRANCH=${m.BRANCH} SHA=${m.SHA} IMAGE_TAG=${m.IMAGE_TAG}&quot;
+}
+
+pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;10&apos;)) }
   stages {
+    stage(&apos;Resolve source&apos;) {
+      steps {
+        sh &apos;&apos;&apos;
+          set -euo pipefail
+          export MODULE=&quot;auth&quot;
+          export MODE=&quot;${MODE}&quot;
+          export OVERLAY=&quot;${OVERLAY}&quot;
+          export SOURCE=&quot;${SOURCE}&quot;
+          export IMAGE_TAG=&quot;${IMAGE_TAG}&quot;
+          export REGISTRY=&quot;${REGISTRY:-}&quot;
+          export BRANCH=&quot;${BRANCH}&quot;
+          export GIT_SHA=&quot;${GIT_SHA:-}&quot;
+          export SKIP_MVN=&quot;$([ &quot;${SKIP_MVN}&quot; = &quot;true&quot; ] &amp;&amp; echo 1 || echo 0)&quot;
+          export WORKSPACE_ROOT=&quot;${WORKSPACE}/repos&quot;
+          export JAVA_HOME=/opt/java/jdk-25
+          export PATH=&quot;$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH&quot;
+          export PREPARE_ONLY=1
+          bash /jenkins-backup/scripts/pipeline-wealth-module.sh
+        &apos;&apos;&apos;
+        script { wealthDesc(&apos;auth&apos;) }
+      }
+    }
     stage(&apos;CI + CD&apos;) {
       steps {
         sh &apos;&apos;&apos;
@@ -101,7 +134,7 @@
           export REGISTRY=&quot;${REGISTRY:-}&quot;
           export BRANCH=&quot;${BRANCH}&quot;
           export GIT_SHA=&quot;${GIT_SHA:-}&quot;
-          export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] &amp;&amp; echo 1 || echo 0)"
+          export SKIP_MVN=&quot;$([ &quot;${SKIP_MVN}&quot; = &quot;true&quot; ] &amp;&amp; echo 1 || echo 0)&quot;
           export WORKSPACE_ROOT=&quot;${WORKSPACE}/repos&quot;
           export JAVA_HOME=/opt/java/jdk-25
           export PATH=&quot;$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH&quot;
@@ -112,12 +145,7 @@
   }
   post {
     always {
-      script {
-        def tagFile = &quot;${env.WORKSPACE}/.wealth-image-tag&quot;
-        if (fileExists(tagFile)) {
-          currentBuild.description = &quot;MODULE=auth MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${readFile(tagFile).trim()}&quot;
-        }
-      }
+      script { wealthDesc(&apos;auth&apos;) }
     }
   }
 }

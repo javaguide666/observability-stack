@@ -122,6 +122,8 @@ docker compose -f docker-compose.loki.yml --profile logs up -d
 可以用本栈的 **obs-jenkins** 跑 GitHub 上的 Wealth 三仓 CI/CD，直接复用  
 `wealth-freedom/deploy/k8s/scripts/build-images.sh` 与 `deploy.sh`（dev / test / prod / local）。
 
+自定义UI地址：http://localhost:18080/userContent/wealth/ （需先登录 Jenkins；旧页面回退：http://localhost:18080/userContent/wealth-legacy/）
+
 | 项 | 说明 |
 | --- | --- |
 | Compose | `docker-compose.jenkins.yml`（控制台 http://localhost:18080，端口 `JENKINS_PORT`） |

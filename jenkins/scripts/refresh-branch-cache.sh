@@ -89,7 +89,11 @@ sort -u "$CACHE_DIR"/wealth-freedom.txt "$CACHE_DIR"/wealth-freedom-web.txt "$CA
 
 export BRANCH_CACHE_DIR="$CACHE_DIR"
 export JENKINS_HOME_JOBS="${JENKINS_HOME_JOBS:-}"
-python3 "$SCRIPT_DIR/sync-branch-choices.py"
-python3 "$SCRIPT_DIR/write-ui-meta.py"
+# 旧逻辑：把分支写进各 Job 的 config.xml。Jenkins 不会热加载磁盘上的 config.xml，且容器内没有 python3，
+# 所以默认不再执行；确需使用请设 SYNC_JOB_CHOICES=1（要求有 python3，改完需 Reload Configuration from Disk）。
+if [[ "${SYNC_JOB_CHOICES:-0}" == "1" ]] && command -v python3 >/dev/null 2>&1; then
+  python3 "$SCRIPT_DIR/sync-branch-choices.py"
+fi
+bash "$SCRIPT_DIR/write-ui-meta.sh"
 
-echo "==> 完成：BRANCH 已改为本地缓存下拉；Wealth CI 控制台 meta.json 已更新"
+echo "==> 完成：分支缓存与控制台 meta.json 已更新（不依赖 python3）"

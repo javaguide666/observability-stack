@@ -17,19 +17,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=jdk /opt/java/openjdk /opt/java/jdk-25
 
 COPY cache/docker.tgz /tmp/docker.tgz
+COPY cache/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
 COPY cache/kubectl /usr/local/bin/kubectl
 COPY cache/maven.tgz /tmp/maven.tgz
 
 RUN set -eux; \
   tar -xzf /tmp/docker.tgz -C /tmp; \
   mv /tmp/docker/docker /usr/local/bin/docker; \
-  chmod +x /usr/local/bin/docker /usr/local/bin/kubectl; \
+  chmod +x /usr/local/bin/docker /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/bin/kubectl; \
   tar -xzf /tmp/maven.tgz -C /opt; \
   ln -sfn /opt/apache-maven-3.9.9 /opt/maven; \
   rm -rf /tmp/docker /tmp/docker.tgz /tmp/maven.tgz; \
   groupadd -f docker; \
   usermod -aG docker jenkins; \
-  java -version; mvn -v; docker --version; kubectl version --client=true
+  java -version; mvn -v; docker --version; docker buildx version; kubectl version --client=true
 
 USER jenkins
 RUN jenkins-plugin-cli --plugins \

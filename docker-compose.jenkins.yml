@@ -20,6 +20,10 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       JAVA_HOME: /opt/java/jdk-25
       PATH: /opt/java/jdk-25/bin:/opt/maven/bin:/usr/local/bin:/opt/java/openjdk/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # 放开 userContent 的默认 CSP（默认 sandbox + default-src 'none' 会禁掉脚本和 XHR，新控制台无法运行）。
+      # 仅允许同源脚本/请求；Element Plus 运行时需要内联 style。
+      JAVA_OPTS: >-
+        -Dhudson.model.DirectoryBrowserSupport.CSP="sandbox allow-scripts allow-same-origin; default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
     ports:
       - "${JENKINS_PORT:-18080}:8080"
       - "${JENKINS_AGENT_PORT:-50000}:50000"
@@ -29,7 +33,10 @@ services:
       - ${JENKINS_KUBE_DIR:-${HOME}/.kube}:/var/jenkins_home/.kube:ro
       - ${JENKINS_SSH_DIR:-${HOME}/.ssh}:/var/jenkins_home/.ssh:ro
       - ./jenkins:/jenkins-backup:ro
-      - ./jenkins/ui:/var/jenkins_home/userContent/wealth:ro
+      # 新控制台（先 pnpm build 生成 dist/，见 jenkins/console/README.md）
+      - ./jenkins/console/dist:/var/jenkins_home/userContent/wealth:ro
+      # 旧页面保留作回退：http://localhost:${JENKINS_PORT:-18080}/userContent/wealth-legacy/
+      - ./jenkins/ui:/var/jenkins_home/userContent/wealth-legacy:ro
       - ./jenkins/init.groovy.d/wealth-ui.groovy:/var/jenkins_home/init.groovy.d/wealth-ui.groovy:ro
       # 可选：直接挂本机三仓，Pipeline 也可 git clone
       - ${JENKINS_WORKSPACE_DIR:-${HOME}/gitee}:/gitee:rw

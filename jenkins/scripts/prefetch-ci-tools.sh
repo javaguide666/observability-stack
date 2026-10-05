@@ -39,6 +39,13 @@ if [[ $(size_of "$CACHE/docker.tgz") -lt 1000000 ]]; then
     "https://download.docker.com/linux/static/stable/${DARCH}/docker-27.5.1.tgz"
 fi
 
+# 静态 docker 客户端不含 buildx；前端 Dockerfile 的 RUN --mount 必须走 BuildKit
+if [[ $(size_of "$CACHE/docker-buildx") -lt 1000000 ]]; then
+  curl_get "$CACHE/docker-buildx" \
+    "https://github.com/docker/buildx/releases/download/v0.20.1/buildx-v0.20.1.linux-${KARCH}"
+fi
+chmod +x "$CACHE/docker-buildx" 2>/dev/null || true
+
 if [[ $(size_of "$CACHE/kubectl") -lt 10000000 ]]; then
   KVER=$(curl -fsSL --retry 5 https://dl.k8s.io/release/stable.txt)
   echo "kubectl=$KVER"

@@ -3,6 +3,13 @@
 # 必需：MODULE=gateway|auth|system-server|admin-server|ecommerce-server|freedom-web|ecommerce-web
 # MODE=build-deploy|rollback  SOURCE=github|local-mount
 # 参数：OVERLAY IMAGE_TAG BRANCH GIT_SHA SKIP_MVN(仅 Java) REGISTRY(可选，测试/生产仓库前缀)
+# PREPARE_ONLY=1：只拉码/解析分支与完整 SHA 并写 ${WORKSPACE}/.wealth-meta-<MODULE>，不构建不部署
+#   （Job 的 'Resolve source' 阶段用它，让构建一开始就能把「分支 | 完整 SHA | tag」写进构建描述）
+#
+# 阶段标记（供控制台前端判断进度；格式固定，单独一行，详见 CI CD Jenkins相关文档 §17「阶段标记约定」）：
+#   ==> STAGE <n>/4 [<module>] <name> [SKIPPED]
+#   n/name：1 checkout（拉代码）· 2 build（构建）· 3 push（镜像）· 4 deploy（部署）
+#   [<module>] 仅当环境变量 STAGE_PREFIX 非空时输出（wealth-all 设为 "[gateway]" 等）；失败即 exit，不会输出后续阶段标记
 set -euo pipefail
 
 MODULE="${MODULE:-}"
@@ -20,6 +27,10 @@ GIT_SHA="${GIT_SHA:-}"
 # 测试/生产私有仓库前缀，例如 registry.example.com/wealth；空=本机 Desktop 短名镜像
 REGISTRY="${REGISTRY:-}"
 HISTORY_KEEP="${HISTORY_KEEP:-10}"
+PREPARE_ONLY="${PREPARE_ONLY:-0}"
+USED_LOCAL_MOUNT=0
+META_BRANCH=""
+REPO_FULL_SHA=""
 
 export JAVA_HOME="${JAVA_HOME:-/opt/java/jdk-25}"
 export PATH="${JAVA_HOME}/bin:/opt/maven/bin:/usr/local/bin:${PATH:-/usr/bin}"
@@ -27,6 +38,27 @@ export PATH="${JAVA_HOME}/bin:/opt/maven/bin:/usr/local/bin:${PATH:-/usr/bin}"
 GH_FREEDOM="${GH_FREEDOM:-git@github.com:javaguide666/wealth-freedom.git}"
 GH_WEB="${GH_WEB:-git@github.com:javaguide666/wealth-freedom-web.git}"
 GH_MALL="${GH_MALL:-git@github.com:javaguide666/wealth-ecommerce-web.git}"
+
+# 容器是 Linux：忽略本机挂载的 macOS ~/.ssh/config（含 UseKeychain 等非法选项会直接让 ssh 退出）
+# 与 refresh-branch-cache.sh / resolve-commit.sh 一致；Jenkins 凭据 github-ssh 不注入本脚本，靠挂载私钥
+if [[ -z "${GIT_SSH_COMMAND:-}" ]]; then
+  _ssh_opts="-F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+  GIT_SSH_COMMAND="ssh ${_ssh_opts}"
+  for _k in \
+    /var/jenkins_home/.ssh/id_ed25519 \
+    /var/jenkins_home/.ssh/id_rsa.github \
+    /var/jenkins_home/.ssh/git-rsa \
+    "${HOME}/.ssh/id_ed25519" \
+    "${HOME}/.ssh/id_rsa.github"
+  do
+    if [[ -f "$_k" ]]; then
+      GIT_SSH_COMMAND="ssh ${_ssh_opts} -i ${_k}"
+      break
+    fi
+  done
+  unset _k _ssh_opts
+fi
+export GIT_SSH_COMMAND GIT_TERMINAL_PROMPT=0
 
 # 兼容旧变量
 if [[ "${USE_LOCAL_GITEE:-}" == "1" ]]; then
@@ -141,9 +173,9 @@ resolve_sha() {
   fi
   full=$(git -C "$dir" rev-parse --verify "${want}^{commit}" 2>/dev/null || true)
   if [[ -z "$full" ]]; then
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch --depth=1 origin "$want" 2>/dev/null || \
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch origin "$want" 2>/dev/null || true
     full=$(git -C "$dir" rev-parse --verify "${want}^{commit}" 2>/dev/null || true)
   fi
@@ -159,20 +191,20 @@ clone_or_update() {
   local full detected
   branch="${branch:-main}"
   if [[ -d "$dir/.git" ]]; then
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch --all --prune
   else
     mkdir -p "$(dirname "$dir")"
     if [[ -n "$sha" ]]; then
-      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git clone "$url" "$dir"
     else
-      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git clone --branch "$branch" --single-branch "$url" "$dir" || \
-      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git clone "$url" "$dir"
     fi
-    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+    GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
       git -C "$dir" fetch --all --prune || true
   fi
 
@@ -191,9 +223,9 @@ clone_or_update() {
     git -C "$dir" checkout --detach "$full"
   else
     if ! git -C "$dir" rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
-      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git -C "$dir" fetch origin "${branch}:refs/remotes/origin/${branch}" || \
-      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}" \
+      GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -F /dev/null -o BatchMode=yes -o StrictHostKeyChecking=accept-new}" \
         git -C "$dir" fetch origin "$branch"
     fi
     echo "==> checkout $(basename "$dir") branch=${branch} @ origin/${branch}"
@@ -226,6 +258,28 @@ pick_jar() {
     exit 1
   fi
   echo "$jar"
+}
+
+# 写构建元数据，供 Job 的 Groovy 写入构建描述（只含分支名/SHA/tag，无敏感信息）
+write_meta() {
+  local branch="$1" sha="$2" tag="$3" out
+  out="${WORKSPACE:-.}/.wealth-meta-${MODULE}"
+  {
+    printf 'MODULE=%s\n' "$MODULE"
+    printf 'MODE=%s\n' "$MODE"
+    printf 'BRANCH=%s\n' "$(printf '%s' "$branch" | tr -d '\r\n')"
+    printf 'SHA=%s\n' "$sha"
+    printf 'IMAGE_TAG=%s\n' "$tag"
+  } > "$out"
+  echo "==> 构建元数据 分支=${branch} | SHA ${sha} | tag ${tag} → ${out}"
+}
+
+# 读镜像上的 wealth.git.* 标签（build-deploy 时写入）；旧镜像没有标签则返回 unknown
+image_label() {
+  local img="$1" key="$2" v
+  v=$(docker image inspect --format "{{index .Config.Labels \"${key}\"}}" "$img" 2>/dev/null || true)
+  if [[ -z "$v" || "$v" == "<no value>" ]]; then v="unknown"; fi
+  echo "$v"
 }
 
 persist_image_tag() {
@@ -312,6 +366,7 @@ build_one_module() {
     command -v mvn >/dev/null
     local pl="${MOD_PL[$MODULE]}"
     local jar_pat="${MOD_JAR[$MODULE]}"
+    if [[ "$SKIP_MVN" != "1" ]]; then stage 2 build; else stage 2 build SKIPPED; fi
     echo "==> Maven package -pl ${pl} -am (SKIP_MVN=${SKIP_MVN})"
     if [[ "$SKIP_MVN" != "1" ]]; then
       (cd "$WEALTH_FREEDOM_ROOT" && mvn -T 1C -DskipTests package -pl "$pl" -am)
@@ -322,18 +377,26 @@ build_one_module() {
     local jar rel
     jar=$(pick_jar "$jar_pat")
     rel="${jar#"$WEALTH_FREEDOM_ROOT"/}"
+    stage 3 push
     echo "==> docker build ${image}:${tag} from ${rel}"
     docker build -f deploy/docker/Dockerfile.java \
       --build-arg JAVA_IMAGE="$JAVA_IMAGE" \
       --build-arg "JAR_FILE=$rel" \
+      --label "wealth.git.sha=${REPO_FULL_SHA:-}" --label "wealth.git.branch=${META_BRANCH:-$BRANCH}" \
       -t "${image}:${tag}" .
   elif [[ "$kind" == "web" ]]; then
+    stage 2 build SKIPPED   # 前端 pnpm 编译在 Dockerfile 多阶段内，随下一阶段 docker build 执行
+    stage 3 push
     echo "==> docker build ${image}:${tag} (wealth-freedom-web)"
     (cd "$WEALTH_FREEDOM_WEB_ROOT" && docker build \
+      --label "wealth.git.sha=${REPO_FULL_SHA:-}" --label "wealth.git.branch=${META_BRANCH:-$BRANCH}" \
       -t "${image}:${tag}" .)
   elif [[ "$kind" == "mall" ]]; then
+    stage 2 build SKIPPED   # 同上：前端编译在 Dockerfile 内
+    stage 3 push
     echo "==> docker build ${image}:${tag} -f apps/web/Dockerfile"
     (cd "$WEALTH_ECOMMERCE_WEB_ROOT" && docker build -f apps/web/Dockerfile \
+      --label "wealth.git.sha=${REPO_FULL_SHA:-}" --label "wealth.git.branch=${META_BRANCH:-$BRANCH}" \
       -t "${image}:${tag}" .)
   else
     echo "ERROR: 未知 kind=${kind}" >&2
@@ -350,6 +413,7 @@ prepare_repos() {
     export WEALTH_FREEDOM_ROOT=/gitee/wealth-freedom
     export WEALTH_FREEDOM_WEB_ROOT=/gitee/wealth-freedom-web
     export WEALTH_ECOMMERCE_WEB_ROOT=/gitee/wealth-ecommerce-web
+    USED_LOCAL_MOUNT=1
     echo "==> SOURCE=local-mount：使用 /gitee（不切换分支/SHA）"
     if [[ -n "$GIT_SHA" ]]; then
       echo "WARN: local-mount 忽略 GIT_SHA；请改 SOURCE=github"
@@ -400,12 +464,25 @@ resolve_auto_tag() {
   branch_part=$(sanitize_tag_part "$BRANCH")
   AUTO_TAG="${branch_part}-${short}"
   REPO_FULL_SHA="$full"
+  META_BRANCH="$BRANCH"
+  if [[ "$USED_LOCAL_MOUNT" == "1" ]]; then
+    # local-mount 不切分支：记录 /gitee 里实际所在分支，而不是下拉框里的值
+    META_BRANCH=$(git -C "$repo_dir" symbolic-ref --short -q HEAD 2>/dev/null || echo "detached")
+  fi
   if [[ -z "$IMAGE_TAG" || "$IMAGE_TAG" == "auto" || "$IMAGE_TAG" == "local" ]]; then
     IMAGE_TAG="$AUTO_TAG"
     echo "==> IMAGE_TAG 自动设为 ${IMAGE_TAG}（${MODULE} ${full}）"
   else
     echo "==> 使用用户指定 IMAGE_TAG=${IMAGE_TAG}（HEAD ${full}）"
   fi
+}
+
+# 阶段标记：stage <n> <name> [skipped]。只在阶段开始时输出一行；失败时 set -e 直接退出，后续阶段不会输出
+STAGE_TOTAL=4
+STAGE_PREFIX="${STAGE_PREFIX:-}"
+stage() {
+  local n="$1" name="$2" skipped="${3:-}"
+  printf '==> STAGE %s/%s %s%s%s\n' "$n" "$STAGE_TOTAL" "${STAGE_PREFIX:+${STAGE_PREFIX} }" "$name" "${skipped:+ SKIPPED}"
 }
 
 # ---------- main ----------
@@ -417,13 +494,16 @@ if [[ -z "$MODULE" || -z "${MOD_KIND[$MODULE]+x}" ]]; then
   exit 1
 fi
 
+rm -f "${WORKSPACE:-.}/.wealth-meta-${MODULE}"
 rewrite_kubeconfig_for_docker_desktop
 
 echo "==> 预检 MODULE=${MODULE} MODE=${MODE} OVERLAY=${OVERLAY} SOURCE=${SOURCE} REGISTRY=${REGISTRY:-<empty>}"
-command -v docker >/dev/null
-command -v kubectl >/dev/null
-docker info >/dev/null
-kubectl cluster-info >/dev/null
+if [[ "$PREPARE_ONLY" != "1" ]]; then   # PREPARE_ONLY 只拉码解析 SHA，不需要 docker/K8s
+  command -v docker >/dev/null
+  command -v kubectl >/dev/null
+  docker info >/dev/null
+  kubectl cluster-info >/dev/null
+fi
 
 # ---------- rollback ----------
 if [[ "$MODE" == "rollback" ]]; then
@@ -431,7 +511,18 @@ if [[ "$MODE" == "rollback" ]]; then
     echo "ERROR: MODE=rollback 时必须显式指定历史 IMAGE_TAG（不可为 auto/local/空）" >&2
     exit 1
   fi
+  stage 1 checkout SKIPPED   # rollback 不拉码；分支/SHA 取自镜像 label
+  stage 2 build SKIPPED
+  rb_img="${MOD_IMAGE[$MODULE]}:${IMAGE_TAG}"
+  write_meta "$(image_label "$rb_img" wealth.git.branch)" "$(image_label "$rb_img" wealth.git.sha)" "$IMAGE_TAG"
+  if [[ "$PREPARE_ONLY" == "1" ]]; then
+    echo "==> PREPARE_ONLY=1：rollback 仅写元数据，不执行回滚"
+    exit 0
+  fi
+  # 镜像阶段：本机镜像存在性检查；走 REGISTRY 时由集群节点 pull，无本机检查 → SKIPPED
+  if [[ -n "${REGISTRY}" ]]; then stage 3 push SKIPPED; else stage 3 push; fi
   verify_one_image "$IMAGE_TAG"
+  stage 4 deploy
   set_one_image "$IMAGE_TAG"
   wait_one_rollout
   persist_image_tag "$IMAGE_TAG"
@@ -448,10 +539,17 @@ if [[ "$MODE" != "build-deploy" ]]; then
   exit 1
 fi
 
+stage 1 checkout
 prepare_repos
 resolve_auto_tag
-build_one_module
+write_meta "$META_BRANCH" "$REPO_FULL_SHA" "$IMAGE_TAG"
+if [[ "$PREPARE_ONLY" == "1" ]]; then
+  echo "==> PREPARE_ONLY=1：已解析分支与 SHA，不构建不部署"
+  exit 0
+fi
+build_one_module      # 内部输出 STAGE 2 build（Maven / SKIPPED）与 STAGE 3 push（docker build）
 push_if_registry
+stage 4 deploy
 set_one_image "$IMAGE_TAG"
 wait_one_rollout
 persist_image_tag "$IMAGE_TAG"

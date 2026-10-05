@@ -3,7 +3,7 @@ import jenkins.model.Jenkins
 def html = '''
 <div class="wealth-ci-banner">
   <span>Wealth CI：按分支构建、按完整 Commit 回放、最近 10 个版本一键启动。</span>
-  <a href="/userContent/wealth/">打开新控制台</a>
+  <a href="/userContent/wealth/">打开新控制台</a> · <a href="/userContent/wealth-legacy/">旧页面</a>
 </div>
 '''
 
@@ -19,7 +19,7 @@ try {
   def decorator = j.getExtensionList(clazz).find { true }
   if (decorator != null) {
     def cssClazz = Class.forName('org.jenkinsci.plugins.simpletheme.CssUrlThemeElement')
-    def css = cssClazz.getConstructor(String.class).newInstance('/userContent/wealth/jenkins-theme.css')
+    def css = cssClazz.getConstructor(String.class).newInstance('/userContent/wealth-legacy/jenkins-theme.css')
     decorator.elements = [css]
     println 'Wealth UI: simple-theme CSS 已挂载'
   }

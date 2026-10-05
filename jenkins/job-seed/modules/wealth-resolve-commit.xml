@@ -1,0 +1,68 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>只读：按 Commit SHA 反查所属分支（供 Wealth CI 控制台在点构建前预览「自动识别：分支」）。不构建、不部署、不改集群。结果：构建产物 resolve.json（/job/wealth-resolve-commit/&lt;构建号&gt;/artifact/resolve.json）。脚本：resolve-commit.sh</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>SHA</name>
+          <description>完整 40 位 Commit SHA（十六进制，大小写均可，会转小写）。非法格式不会访问仓库，resolve.json 里 error=invalid</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>REPO</name>
+          <description>在哪个仓库里找（只读镜像缓存，白名单）。wealth-freedom=5 个 Java 模块；wealth-freedom-web；wealth-ecommerce-web</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>wealth-freedom</string>
+              <string>wealth-freedom-web</string>
+              <string>wealth-ecommerce-web</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>-1</daysToKeep>
+        <numToKeep>50</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>50</artifactNumToKeep>
+        <removeLastBuild>false</removeLastBuild>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+  agent any
+  options { timestamps(); timeout(time: 3, unit: &apos;MINUTES&apos;); buildDiscarder(logRotator(numToKeepStr: &apos;50&apos;, artifactNumToKeepStr: &apos;50&apos;)) }
+  stages {
+    stage(&apos;Resolve commit&apos;) {
+      steps {
+        // 只读：SHA/REPO 由 Jenkins 以环境变量传入，脚本内先校验再使用；不 build、不 docker、不 kubectl
+        sh &apos;&apos;&apos;
+          set -uo pipefail
+          bash /jenkins-backup/scripts/resolve-commit.sh
+        &apos;&apos;&apos;
+      }
+    }
+  }
+  post {
+    always {
+      script {
+        if (fileExists(&apos;resolve.desc&apos;)) {
+          currentBuild.description = readFile(&apos;resolve.desc&apos;).trim()
+        }
+      }
+      archiveArtifacts artifacts: &apos;resolve.json&apos;, allowEmptyArchive: true
+    }
+  }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

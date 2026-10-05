@@ -81,7 +81,23 @@
     </org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
-    <script>pipeline {
+    <script>def wealthAllDesc() {
+  def parts = []
+  for (mod in [&apos;gateway&apos;, &apos;auth&apos;, &apos;system-server&apos;, &apos;admin-server&apos;, &apos;ecommerce-server&apos;, &apos;freedom-web&apos;, &apos;ecommerce-web&apos;]) {
+    def mf = &quot;${env.WORKSPACE}/.wealth-meta-${mod}&quot;
+    if (!fileExists(mf)) { continue }
+    def m = [:]
+    for (l in readFile(mf).trim().split(&apos;\n&apos;)) {
+      def i = l.indexOf(&apos;=&apos;)
+      if (i &gt; 0) { m[l.substring(0, i)] = l.substring(i + 1).trim() }
+    }
+    parts &lt;&lt; &quot;${mod}: 分支 ${m.BRANCH} | SHA ${m.SHA} | tag ${m.IMAGE_TAG}&quot;
+  }
+  def head = &quot;wealth-all MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${params.IMAGE_TAG}&quot;
+  currentBuild.description = parts ? (head + &apos; | &apos; + parts.join(&apos; ; &apos;)) : head
+}
+
+pipeline {
   agent any
   options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: &apos;10&apos;)) }
   stages {
@@ -107,9 +123,7 @@
   }
   post {
     always {
-      script {
-        currentBuild.description = &quot;wealth-all MODE=${params.MODE} OVERLAY=${params.OVERLAY} IMAGE_TAG=${params.IMAGE_TAG}&quot;
-      }
+      script { wealthAllDesc() }
     }
   }
 }
