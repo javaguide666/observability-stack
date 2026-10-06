@@ -59,6 +59,7 @@ const source = ref<Source>('github')
 const registry = ref('')
 const registryManualOpen = ref(false)
 const skipMvn = ref(false)
+const onlyCurrentModule = ref(true)
 
 const branches = ref<string[]>([])
 const branchesLoading = ref(false)
@@ -238,6 +239,7 @@ async function onJobChanged(): Promise<void> {
   const cur = current.value
   if (!cur.supportsCommit && flow.value !== 'branch') flow.value = 'branch'
   skipMvn.value = false
+  onlyCurrentModule.value = true
   resolveSeq++
   resolveAbort?.abort() // 切换模块：取消上一个模块的 commit 识别轮询
   refreshAbort?.abort()
@@ -402,6 +404,7 @@ function buildParams(): BuildParams {
     BRANCH: branch.value || 'main',
     GIT_SHA: flow.value === 'commit' ? sha.value.toLowerCase() : '',
     SKIP_MVN: cur.java ? skipMvn.value : false,
+    ONLY_CURRENT_MODULE: cur.java ? onlyCurrentModule.value : true,
   }
 }
 
@@ -472,18 +475,6 @@ async function submitBuild(): Promise<boolean> {
     }
     if (submitBlock.value) return false
   }
-  if (overlay.value === 'prod') {
-    const what = flow.value === 'commit' ? `GIT_SHA ${sha.value}` : `分支 ${branch.value}`
-    try {
-      await ElMessageBox.confirm(
-        `目标环境是 prod，将构建并部署 ${current.value.title}（${what}）。确认继续？`,
-        '生产环境二次确认',
-        { type: 'warning', confirmButtonText: '确认部署', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' },
-      )
-    } catch {
-      return false
-    }
-  }
   return startBuild(buildParams())
 }
 
@@ -518,6 +509,7 @@ async function startRollback(item: HistoryItem): Promise<boolean> {
     BRANCH: item.branch,
     GIT_SHA: '',
     SKIP_MVN: false,
+    ONLY_CURRENT_MODULE: true,
   }
   return startBuild(params)
 }
@@ -602,7 +594,7 @@ watch(overlay, () => {
 const store = reactive({
     // 只读状态
     who, info, connection, loginRequired, sessionExpired, jobs, jobsLoading, currentJob, current, paramDefs, mockMode: USE_MOCK,
-    flow, mode, overlay, source, registry, registryOpen, registryRequired, registryManualOpen, skipMvn,
+    flow, mode, overlay, source, registry, registryOpen, registryRequired, registryManualOpen, skipMvn, onlyCurrentModule,
     branches, branchesLoading, branchesError, branchesSource, branchesNotice, extraTags, refreshing, branch, branchAuto,
     sha, shaError, shaValid, resolvePhase, resolveResult, resolveError, resolveCandidates,
     history, historyLoading, historyError,

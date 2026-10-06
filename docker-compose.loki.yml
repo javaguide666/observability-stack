@@ -2,7 +2,7 @@
 # 日志：qryn 只做 Loki 协议搬运，存储复用已有 ClickHouse
 #
 # qryn 实现 Loki Push 与 LogQL，本身不落盘。日志写入 ClickHouse 库 obs_logs。
-# 查询用 ClickVisual（docker-compose.clickvisual.yml）。服务名保持 loki，端口保持 3100。
+# 查询用 Grafana（http://localhost:3002 ，看板「日志 / 应用日志」）。服务名保持 loki，端口保持 3100。
 #
 # 先起 ClickHouse，再起本文件：
 #   docker compose -f docker-compose.clickhouse.yml up -d
@@ -48,6 +48,22 @@ services:
       options:
         max-size: "20m"
         max-file: "3"
+    networks: [obs]
+
+  # Grafana 的 Loki 插件要求时间戳是字符串。qryn 返回的是数字，经此转发再给 Grafana。
+  loki-compat:
+    image: ${REGISTRY_MIRROR:-}node:${NODE_VERSION:-22-alpine}
+    container_name: ${CONTAINER_PREFIX:-obs}-loki-compat
+    restart: unless-stopped
+    depends_on:
+      loki:
+        condition: service_healthy
+    environment:
+      UPSTREAM: http://loki:3100
+      PORT: "3100"
+    command: ["node", "/opt/grafana-compat.mjs"]
+    volumes:
+      - ./config/loki/grafana-compat.mjs:/opt/grafana-compat.mjs:ro
     networks: [obs]
 
   # Promtail 已于 2026-03 停止维护，官方继任者为 Grafana Alloy。

@@ -20,6 +20,7 @@ const moduleDefs = [
   def('BRANCH', 'ChoiceParameterDefinition', 'main', ['main', 'dev']),
   def('GIT_SHA', 'StringParameterDefinition', ''),
   def('SKIP_MVN', 'BooleanParameterDefinition', false),
+  def('ONLY_CURRENT_MODULE', 'BooleanParameterDefinition', true),
 ]
 const NEW_DESC = (b, tag) => `分支 ${b} | SHA ${SHA} | tag ${tag} | MODULE=gateway MODE=build-deploy OVERLAY=dev SHA=${SHA} IMAGE_TAG=${tag}`
 const builds = [
@@ -134,7 +135,7 @@ await page.waitForSelector('.el-dialog .log .line', { timeout: 10000 })
 check('点击构建后才请求识别', seen.some((s) => s.startsWith('POST /job/wealth-resolve-commit/buildWithParameters')))
 await page.waitForFunction(() => document.body.innerText.includes('rollout status'), null, { timeout: 15000 })
 const body = seen.find((s) => s.startsWith('BODY '))
-check('构建表单带完整 GIT_SHA(小写) 与 BRANCH，且只含 Job 定义的参数', body && body.includes(`GIT_SHA=${SHA}`) && body.includes('BRANCH=main') && body.includes('SKIP_MVN=false'), body)
+check('构建表单带完整 GIT_SHA(小写) 与 BRANCH，且只含 Job 定义的参数', body && body.includes(`GIT_SHA=${SHA}`) && body.includes('BRANCH=main') && body.includes('SKIP_MVN=false') && body.includes('ONLY_CURRENT_MODULE=true'), body)
 await page.waitForTimeout(2500)
 check('构建完成后显示成功', await page.locator('.state.ok, .state.success').first().isVisible().catch(() => false))
 await page.screenshot({ path: path.resolve(here, '../.tmp-pw/e2e-real.png') })

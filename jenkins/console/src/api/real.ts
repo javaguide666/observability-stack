@@ -414,6 +414,7 @@ export function buildFormFor(job: string, defs: ParamDef[], p: BuildParams): { f
 
   // SKIP_MVN：仅 Java 模块 Job 定义了它
   if (byName.has('SKIP_MVN')) form.SKIP_MVN = String(!rollback && p.SKIP_MVN)
+  if (byName.has('ONLY_CURRENT_MODULE')) form.ONLY_CURRENT_MODULE = String(!rollback && p.ONLY_CURRENT_MODULE)
 
   return { form, notice }
 }
@@ -422,6 +423,8 @@ export function buildFormFor(job: string, defs: ParamDef[], p: BuildParams): { f
 
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g
+/** Timestamper 写在日志里的隐藏书签，去掉 ANSI 后会变成可见的 ha://// 乱码 */
+const TS_NOTE = /ha:\/\/\/\/\S*/g
 
 function rememberHint(key: string, h: StageHint | undefined): void {
   if (!h) return
@@ -453,7 +456,7 @@ function emptyStatus(job: string, number: number, state: BuildState): BuildStatu
     imageTag: '',
     branch: '',
     mode: 'build-deploy',
-    params: { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: '', GIT_SHA: '', SKIP_MVN: false },
+    params: { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: '', GIT_SHA: '', SKIP_MVN: false, ONLY_CURRENT_MODULE: true },
     etaSec: 0,
   }
 }
@@ -663,6 +666,7 @@ export const realApi: JenkinsApi = {
         result: string | null
         building: boolean
         timestamp: number
+        duration?: number
         description?: string | null
         actions?: unknown
       }[]
@@ -683,6 +687,7 @@ export const realApi: JenkinsApi = {
         canCompare: !!info.sha,
         overlay: info.overlay || undefined,
         timestamp: b.timestamp,
+        durationMs: b.building ? 0 : (b.duration ?? 0),
         result,
         building: !!b.building,
         mode: info.mode,
@@ -755,10 +760,12 @@ export const realApi: JenkinsApi = {
       BRANCH: p.BRANCH ?? info.branch,
       GIT_SHA: p.GIT_SHA ?? '',
       SKIP_MVN: p.SKIP_MVN === 'true',
+      ONLY_CURRENT_MODULE: p.ONLY_CURRENT_MODULE !== 'false',
     }
     // 阶段：Pipeline 只有 Resolve source / CI + CD 两个 stage，wfapi 给不出 拉代码/构建/推镜像/部署，改用日志里的「==> 」标记推断
     const hint = hints.get(key)
-    st.stages = inferStages(hint, state, info.mode)
+    const clock = b.building ? Date.now() : b.timestamp + (b.duration ?? elapsed)
+    st.stages = inferStages(hint, state, info.mode, clock)
     if (hint?.module) st.stageModule = hint.module
     return st
   },
@@ -771,7 +778,7 @@ export const realApi: JenkinsApi = {
     if (start === 0) carry.delete(key)
     const more = res.headers.get('X-More-Data') === 'true'
     const next = Number(res.headers.get('X-Text-Size') ?? start)
-    let text = (carry.get(key) ?? '') + (await res.text()).replace(ANSI, '')
+    let text = (carry.get(key) ?? '') + (await res.text()).replace(ANSI, '').replace(TS_NOTE, '')
     // 仍在写入时，最后一行可能只有半截：留到下一次拼接
     if (more && text && !text.endsWith('\n')) {
       const i = text.lastIndexOf('\n')

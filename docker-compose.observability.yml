@@ -1,0 +1,17 @@
+# ============================================================
+# 可观测性：ClickHouse + Loki(qryn) + Prometheus + Grafana
+#
+# 一次拉起后，只开 Grafana 即可查日志和服务器指标。
+# 日志经 qryn 写入 ClickHouse，所以这里带上 ClickHouse；数据栈已起过时会复用同一容器。
+#
+# 启动：docker compose -f docker-compose.observability.yml up -d
+# 停止：docker compose -f docker-compose.observability.yml down
+# Grafana：http://localhost:3002
+# ============================================================
+name: obs-stack
+
+include:
+  - docker-compose.clickhouse.yml
+  - docker-compose.loki.yml
+  - docker-compose.prometheus.yml
+  - docker-compose.grafana.yml

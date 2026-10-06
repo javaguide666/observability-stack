@@ -16,6 +16,7 @@ pipeline {
     string(name: 'BRANCH', defaultValue: 'main', description: 'wealth-freedom 分支')
     string(name: 'GIT_SHA', defaultValue: '', description: '完整 GIT_SHA；填写后自动识别分支，空=分支最新')
     booleanParam(name: 'SKIP_MVN', defaultValue: false, description: '跳过 Maven（仅重打镜像）')
+    booleanParam(name: 'ONLY_CURRENT_MODULE', defaultValue: true, description: '默认勾选：只打包本模块；取消则 -am 全量')
   }
   environment {
     WORKSPACE_ROOT = "${env.WORKSPACE}/repos"
@@ -35,6 +36,7 @@ pipeline {
           export BRANCH="${BRANCH}"
           export GIT_SHA="${GIT_SHA:-}"
           export SKIP_MVN="$([ "${SKIP_MVN}" = "true" ] && echo 1 || echo 0)"
+          export ONLY_CURRENT_MODULE="$([ "${ONLY_CURRENT_MODULE}" = "false" ] && echo 0 || echo 1)"
           export WORKSPACE_ROOT="${WORKSPACE_ROOT}"
           bash /jenkins-backup/scripts/pipeline-wealth-module.sh
         '''

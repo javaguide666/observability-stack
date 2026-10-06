@@ -1,0 +1,309 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "loki",
+    "logs"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "应用日志",
+  "uid": "app-logs",
+  "version": 10,
+  "description": "筛选从左到右是模块、级别、组件。模块是 wealth 业务的 app 标签。级别按日志正文里的 DEBUG / INFO / WARN / ERROR 过滤，全部时不加关键字。组件是非 wealth 的 app，例如 coredns。",
+  "templating": {
+    "list": [
+      {
+        "name": "module",
+        "label": "模块",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(app)",
+        "query": "label_values(app)",
+        "regex": "/^(wealth-.*)$/",
+        "includeAll": true,
+        "allValue": "wealth-.*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "level",
+        "label": "级别",
+        "type": "custom",
+        "query": "[{\"text\": \"全部\", \"value\": \"|= \\\"\\\"\"}, {\"text\": \"DEBUG\", \"value\": \"|= \\\"DEBUG\\\"\"}, {\"text\": \"INFO\", \"value\": \"|= \\\"INFO\\\"\"}, {\"text\": \"WARN\", \"value\": \"|= \\\"WARN\\\"\"}, {\"text\": \"ERROR\", \"value\": \"|= \\\"ERROR\\\"\"}]",
+        "includeAll": false,
+        "multi": false,
+        "refresh": 0,
+        "current": {
+          "selected": true,
+          "text": "全部",
+          "value": "|= \"\""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "全部",
+            "value": "|= \"\""
+          },
+          {
+            "selected": false,
+            "text": "DEBUG",
+            "value": "|= \"DEBUG\""
+          },
+          {
+            "selected": false,
+            "text": "INFO",
+            "value": "|= \"INFO\""
+          },
+          {
+            "selected": false,
+            "text": "WARN",
+            "value": "|= \"WARN\""
+          },
+          {
+            "selected": false,
+            "text": "ERROR",
+            "value": "|= \"ERROR\""
+          }
+        ],
+        "hide": 0,
+        "valuesFormat": "json"
+      },
+      {
+        "name": "component",
+        "label": "组件",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "label_values(app)",
+        "query": "label_values(app)",
+        "regex": "/^((?!wealth-).+)$/",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "keyword",
+        "label": "内容",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 4,
+      "type": "row",
+      "title": "日志量（点击标题收起 / 展开）",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "业务日志量",
+      "description": "每个时间段的业务日志条数，按模块堆叠，跟随上方筛选。在图上按住鼠标左右拖一段，即可把整个看板的时间范围精确缩到那一段；Ctrl+Z 或右上角放大镜恢复。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "interval": "1m",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (app) (count_over_time({namespace=\"wealth\", app=~\"$module\"} ${level:raw} |= \"$keyword\" [$__interval]))",
+          "legendFormat": "{{app}}",
+          "queryType": "range"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "业务日志（点击标题收起 / 展开）",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "业务日志",
+      "description": "wealth 命名空间。模块、级别用上方下拉框。日志行里有级别、类名和 traceId。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{namespace=\"wealth\", app=~\"$module\"} ${level:raw} |= \"$keyword\" | drop cluster, node, instance, job, container, log_kind, level, service",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "集群组件日志",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": [
+        {
+          "id": 2,
+          "type": "logs",
+          "title": "集群组件日志",
+          "description": "kube-system 与日志组件。组件、级别用上方下拉框。不包含 wealth 业务。",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 24
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "{namespace!=\"wealth\", app=~\"$component\"} ${level:raw} |= \"$keyword\" | drop cluster, node, instance, job, container, log_kind, level, service",
+              "queryType": "range",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          }
+        }
+      ]
+    }
+  ]
+}

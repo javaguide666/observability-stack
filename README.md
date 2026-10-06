@@ -28,14 +28,22 @@ docker compose -f docker-compose.clickhouse.yml up -d
 docker compose -f docker-compose.jenkins.yml up -d --build
 ```
 
-构建 Jenkins 镜像时会按 CPU 架构下载 docker、buildx、kubectl、maven。这一层没有变化时直接复用，这些文件不用提交到 git。
+构建 Jenkins 镜像时按 CPU 架构下载 docker、buildx、kubectl、maven。kubectl / buildx 走 DaoCloud 等国内源，版本写死在脚本里，避免每次去 `dl.k8s.io` 查 `stable.txt`。下载目录用 BuildKit 缓存，失败重试不会把已经下完的包再拉一遍。这一层没变就直接复用，文件不用提交 git。网络特别差时可以先在本机跑 `bash jenkins/scripts/prefetch-ci-tools.sh`，再 `--build`。
 
-可观测性（与数据栈同一网络，可随时追加）。日志栈复用已有 ClickHouse，先起数据栈或单独起 ClickHouse：
+可观测性（Grafana + Loki + Prometheus，与数据栈同一网络）。日志写入 ClickHouse，这一条会一并拉起：
+
+```bash
+docker compose -f docker-compose.observability.yml up -d
+```
+
+打开 http://localhost:3002 ：文件夹「日志」→「应用日志」查 Loki；文件夹「服务器」→「服务器核心指标」查 Prometheus。
+
+只装其中一个：
 
 ```bash
 docker compose -f docker-compose.clickhouse.yml up -d
 docker compose -f docker-compose.loki.yml up -d          # qryn（服务名 loki），日志写入 ClickHouse
-docker compose -f docker-compose.clickvisual.yml up -d   # 日志查询 UI，需 MySQL
+docker compose -f docker-compose.clickvisual.yml --profile clickvisual up -d   # 可选，默认不要起。查日志用 Grafana :3002
 docker compose -f docker-compose.skywalking.yml up -d    # 链路追踪，UI 在 http://localhost:18089
 docker compose -f docker-compose.prometheus.yml up -d    # 服务器指标
 docker compose -f docker-compose.grafana.yml up -d       # http://localhost:3002
@@ -59,12 +67,13 @@ docker compose -f docker-compose.grafana.yml up -d       # http://localhost:3002
 | PostgreSQL | `docker-compose.postgres.yml` | 18.6-alpine | 可选主库 | all.yml |
 | ClickHouse | `docker-compose.clickhouse.yml` | 25.8 | 指标 / 日志存储 | all.yml |
 | 日志搬运 qryn | `docker-compose.loki.yml` | 3.2.39 | Loki Push / LogQL；可选 Alloy 采集（`alloy`，`--profile logs`） |  |
-| ClickVisual | `docker-compose.clickvisual.yml` | 1.0.4 | 日志查询 UI（元数据复用 MySQL） |  |
+| ClickVisual | `docker-compose.clickvisual.yml` | 1.0.4 | 可选日志 UI，默认不启动（`--profile clickvisual`） |  |
 | SkyWalking | `docker-compose.skywalking.yml` | OAP/UI 10.4.0 + BanyanDB 0.10.0 | 链路追踪 |  |
 | Prometheus + node-exporter | `docker-compose.prometheus.yml` | v3.15.0 / v1.12.1 | 服务器指标 |  |
-| Grafana | `docker-compose.grafana.yml` | 13.0.10 | 统一查询（日志 / 指标 / ClickHouse） |  |
+| Grafana | `docker-compose.grafana.yml` | 13.0.10 | 日志与指标查询。日志看板在「日志 / 应用日志」 |  |
 | Jenkins | `docker-compose.jenkins.yml` | 本地构建 wealth-jenkins:lts-ci | CI |  |
 | 聚合 | `docker-compose.all.yml` | — | include：mysql redis nacos postgres clickhouse | — |
+| 可观测性聚合 | `docker-compose.observability.yml` | — | include：clickhouse loki prometheus grafana | — |
 
 **统一约定**：所有端口 / 版本 / 账号 / 数据目录来自 `.env`（模板 `.env.example`，缺省值与模板一致）；`restart: unless-stopped`；日志轮转；有 healthcheck（Alloy 镜像无 shell，例外）；`REGISTRY_MIRROR` 可给全部镜像加前缀；`CONTAINER_PREFIX` / `OBS_NETWORK` 可起第二套隔离环境（默认 `obs` / `obs-net` 不变）。
 数据目录：`DOCKER_DATA_DIR`（默认 `./data`，放 mysql / redis / nacos / postgres / clickhouse / jenkins）与 `LOCAL_DATA_DIR`（默认 `./data`，放 banyandb / prometheus / grafana）。**已有旧数据的机器**：在 `.env` 里把 `DOCKER_DATA_DIR` 指向旧目录（见快速开始），不迁移、不改动数据。
@@ -84,8 +93,8 @@ docker compose -f docker-compose.grafana.yml up -d       # http://localhost:3002
 | BanyanDB | 17912 · 17913 | http://localhost:17913 |
 | ClickHouse | HTTP 8123 · Native 9001 | http://localhost:8123/ping |
 | 日志搬运（qryn） | 3100（`LOKI_PORT`） | http://localhost:3100/loki/api/v1/labels（`/ready` 返回 capabilities JSON，属正常）。Loki 协议入口，日志写入 ClickHouse 库 `obs_logs`，默认保留 `LOG_RETENTION_DAYS=7` 天；K8s dev 的 Alloy 推送到这里 |
-| ClickVisual | 19001（`CLICKVISUAL_PORT`） | 首次打开 `/install/init` 点一次初始化；账号 `clickvisual` / `clickvisual`；ClickHouse 实例 DSN 见 `config/clickvisual/docker.toml`。日志库 `cv_logs`：`stdout` 是演示表，`qryn_logs` 对应 qryn 写入 `obs_logs` 的日志 |
-| Grafana | 3002（`GRAFANA_PORT`） | http://localhost:3002 ，账号密码见 `.env`；避开 K8s 电商前端 :3000 与 K8s 日志 Grafana :3001 |
+| ClickVisual（可选） | 19001（`CLICKVISUAL_PORT`） | 默认不启动。需要时加 `--profile clickvisual`。日常查日志不用它 |
+| Grafana | 3002（`GRAFANA_PORT`） | http://localhost:3002 ，账号 `admin` / `Admin13278@`。日志：文件夹「日志」→「应用日志」（业务 / 集群组件分开）。Explore 选 Loki 数据源也可查 |
 | Prometheus / node-exporter | 9090 · 9100 | http://localhost:9090/targets 里 `node` 为 UP 即正常 |
 | Jenkins | 18080（`JENKINS_PORT`）· 50000 | http://localhost:18080 ；初始密码见容器日志 |
 
@@ -109,9 +118,9 @@ java -javaagent:/path/to/skywalking-agent/skywalking-agent.jar \
      -jar your-app.jar
 ```
 
-日志方案详见 `obsidian-doc/build_doc/Loki日志，可视化平台搭建.md`（本机 = qryn + ClickHouse + ClickVisual；K8s test/prod = Loki + RustFS）。
+日志与服务器指标方案详见 `obsidian-doc/ai_doc/运维/Loki日志服务指标可视化平台搭建.md`（本机 = qryn + ClickHouse + Prometheus + Grafana；K8s test/prod = Loki + RustFS）。
 
-日志（可选）：应用或 Alloy 按 Loki Push API 推到 `http://loki:3100/loki/api/v1/push`（宿主机用 `http://localhost:3100`）。qryn 写入 ClickHouse 库 `obs_logs`。查询打开 ClickVisual（http://localhost:19001），实例 DSN 指向同一台 ClickHouse。
+日志（可选）：应用或 Alloy 按 Loki Push API 推到 `http://loki:3100/loki/api/v1/push`（宿主机用 `http://localhost:3100`）。qryn 写入 ClickHouse 库 `obs_logs`。查询打开 Grafana http://localhost:3002 ，看板「日志 / 应用日志」。
 
 把日志文件放进 `./data/host-logs/`，然后
 
@@ -136,7 +145,7 @@ docker compose -f docker-compose.loki.yml --profile logs up -d
 
 ```bash
 # 启动 Jenkins（已建议挂载 docker.sock + ~/.kube + ~/.ssh，仅本机开发用）
-# 镜像内的 docker / kubectl / maven 在本次构建中下载；Dockerfile 那一层有缓存就不再下载
+# docker / kubectl / maven 走国内镜像下载；BuildKit 缓存命中则跳过
 docker compose -f docker-compose.jenkins.yml up -d --build
 
 # 手动跑一遍与 Pipeline 相同的脚本（在宿主机验证）
@@ -158,12 +167,10 @@ cp .env.example .env                  # Windows：copy .env.example .env；按�
 
 # 全开（约需 8GB+ 内存；Nacos 在 MySQL 之后，先起数据栈）
 docker compose -f docker-compose.all.yml up -d
+docker compose -f docker-compose.observability.yml up -d   # ClickHouse + Loki + Prometheus + Grafana
 docker compose -f docker-compose.skywalking.yml up -d
-docker compose -f docker-compose.clickhouse.yml -f docker-compose.loki.yml up -d
-docker compose -f docker-compose.prometheus.yml up -d
-docker compose -f docker-compose.grafana.yml up -d
-docker compose -f docker-compose.clickvisual.yml up -d
 docker compose -f docker-compose.jenkins.yml up -d --build      # 可选
+# ClickVisual 默认不启动。需要时：docker compose -f docker-compose.clickvisual.yml --profile clickvisual up -d
 
 # 清理：逐个 down，保留 data/
 docker compose -f docker-compose.jenkins.yml down      # 其余同理，把文件名换成对应组件
@@ -184,7 +191,7 @@ docker compose -f docker-compose.jenkins.yml down      # 其余同理，把文�
 ```bash
 scripts/init-env.sh [--random]      # 生成 .env；--random 只随机 MySQL root、Redis、Postgres、Nacos、Grafana 等 .env 控制的密码
 scripts/check.sh                    # 自检（Docker/Compose 版本、内存、架构、端口冲突）并打印访问地址表
-scripts/up.sh core|logging|skywalking|metrics|grafana|ci|full|<组件名>   # 按名称启动，自动补依赖并等 healthy；已在运行的默认跳过
+scripts/up.sh core|logging|observability|skywalking|metrics|grafana|ci|full|<组件名>   # 按名称启动，自动补依赖并等 healthy；已在运行的默认跳过
 scripts/down.sh <同上>              # 停止，保留数据目录
 ```
 

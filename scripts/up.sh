@@ -2,13 +2,14 @@
 # 按名称启动一个或多个组件（每个组件仍是独立的 docker-compose.<组件>.yml，此脚本只做顺序/等待/封装）。
 # 用法：scripts/up.sh [--recreate] [--no-wait] [名称或分组 ...]      默认：core
 #   组件：mysql redis postgres clickhouse nacos skywalking loki alloy prometheus grafana clickvisual jenkins
-#   分组：core=mysql redis nacos | logging=clickhouse loki clickvisual | metrics=prometheus
-#         monitor=skywalking prometheus grafana | ci=jenkins | full=全部
+#   分组：core=mysql redis nacos | logging=clickhouse loki grafana | metrics=prometheus
+#         observability=clickhouse loki prometheus grafana | monitor=skywalking prometheus grafana | ci=jenkins | full=全部
 # 说明：
 #   - 自动补依赖（nacos→mysql，loki→clickhouse，clickvisual→mysql+clickhouse）并按顺序等待 healthy
 #   - 已在运行的组件默认跳过（不会因为配置漂移而重建）；--recreate 才按最新配置重建（数据目录不动）
 #   - 缺 .env 时自动调用 init-env.sh（默认账号，不覆盖已有文件）
 #   - alloy 是 loki 文件里的可选采集器（--profile logs）
+#   - clickvisual 默认不启动（--profile clickvisual），查日志用 Grafana
 set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -44,6 +45,7 @@ for c in $comps; do
   f="$(comp_file "$c")"
   extra=()
   [[ "$c" == "alloy" ]] && extra=(--profile logs)
+  [[ "$c" == "clickvisual" ]] && extra=(--profile clickvisual)
   if [[ $RECREATE -eq 0 && "$c" != "alloy" ]] && already_running "$f"; then
     echo "==> $c 已在运行，跳过（--recreate 强制重建）"
     continue

@@ -59,6 +59,8 @@ export interface BuildParams {
   BRANCH: string
   GIT_SHA: string
   SKIP_MVN: boolean
+  /** 默认 true：Maven 只打包本模块；false 则 -am 连同依赖一起编译 */
+  ONLY_CURRENT_MODULE: boolean
 }
 
 export interface ResolveResult {
@@ -93,6 +95,8 @@ export interface HistoryItem {
   /** 构建时的 OVERLAY（描述或参数里取到时有值） */
   overlay?: string
   timestamp: number
+  /** Jenkins 该次构建耗时（毫秒）；构建中为 0 */
+  durationMs: number
   result: BuildResult
   building: boolean
   mode: Mode
@@ -109,6 +113,10 @@ export interface StageInfo {
   key: StageKey
   label: string
   state: StageState
+  /** 该阶段第一次出现 STAGE 行的时刻（日志 timestamps） */
+  startedAt?: number
+  /** 已结束用下一阶段起点或「完成」行；进行中用当前时刻 */
+  durationMs?: number
 }
 
 export type BuildState = 'queued' | 'running' | 'success' | 'failure' | 'aborted'

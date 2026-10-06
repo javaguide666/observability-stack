@@ -69,6 +69,11 @@
           <description>跳过 Maven（仅重打镜像，需已有 jar）</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ONLY_CURRENT_MODULE</name>
+          <description>默认勾选：Maven 只打包本模块。取消勾选则 -am 连同 common 等依赖一起全量编译。</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
     <jenkins.model.BuildDiscarderProperty>
@@ -113,6 +118,7 @@ pipeline {
           export BRANCH=&quot;${BRANCH}&quot;
           export GIT_SHA=&quot;${GIT_SHA:-}&quot;
           export SKIP_MVN=&quot;$([ &quot;${SKIP_MVN}&quot; = &quot;true&quot; ] &amp;&amp; echo 1 || echo 0)&quot;
+          export ONLY_CURRENT_MODULE=&quot;$([ &quot;${ONLY_CURRENT_MODULE}&quot; = &quot;false&quot; ] &amp;&amp; echo 0 || echo 1)&quot;
           export WORKSPACE_ROOT=&quot;${WORKSPACE}/repos&quot;
           export JAVA_HOME=/opt/java/jdk-25
           export PATH=&quot;$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH&quot;
@@ -135,6 +141,7 @@ pipeline {
           export BRANCH=&quot;${BRANCH}&quot;
           export GIT_SHA=&quot;${GIT_SHA:-}&quot;
           export SKIP_MVN=&quot;$([ &quot;${SKIP_MVN}&quot; = &quot;true&quot; ] &amp;&amp; echo 1 || echo 0)&quot;
+          export ONLY_CURRENT_MODULE=&quot;$([ &quot;${ONLY_CURRENT_MODULE}&quot; = &quot;false&quot; ] &amp;&amp; echo 0 || echo 1)&quot;
           export WORKSPACE_ROOT=&quot;${WORKSPACE}/repos&quot;
           export JAVA_HOME=/opt/java/jdk-25
           export PATH=&quot;$JAVA_HOME/bin:/opt/maven/bin:/usr/local/bin:$PATH&quot;

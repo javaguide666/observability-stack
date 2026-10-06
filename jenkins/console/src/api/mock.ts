@@ -75,6 +75,7 @@ const PARAM_DEFS: ParamDef[] = [
   { name: 'BRANCH', type: 'choice', description: '本模块分支（本地缓存下拉；刷新：Job wealth-refresh-branches）', defaultValue: 'main', choices: ['main'] },
   { name: 'GIT_SHA', type: 'string', description: '完整 GIT_SHA（建议 40 位）。填写后自动识别分支，BRANCH 可保持默认；空=分支最新', defaultValue: '' },
   { name: 'SKIP_MVN', type: 'boolean', description: '跳过 Maven（仅重打镜像，需已有 jar）', defaultValue: false },
+  { name: 'ONLY_CURRENT_MODULE', type: 'boolean', description: '默认勾选：Maven 只打包本模块。取消勾选则连同 common 等依赖一起全量编译。', defaultValue: true },
 ]
 
 const branchCache: Record<string, string[]> = {
@@ -160,6 +161,7 @@ function seedJob(job: string, repo: string, idx: number): void {
       sha,
       canCompare: true,
       timestamp: now - (agoMin[i] + Math.floor(r() * 9)) * 60_000,
+      durationMs: (40 + (i * 17) % 80) * 1000,
       result: failIdx.has(i) ? 'FAILURE' : 'SUCCESS',
       building: false,
       mode: 'build-deploy',
@@ -219,9 +221,15 @@ function buildLog(b: MockBuild): LogLine[] {
   if (b.skipBuild) {
     out.push(L(0.16, '==> SKIP_MVN=true，跳过 Maven，直接使用已有 jar'))
   } else if (java) {
-    out.push(L(0.15, `==> mvn -q -pl ${m?.module === 'all' ? '.' : 'wealth-' + mod} -am package -DskipTests`))
+    out.push(L(0.15, p.ONLY_CURRENT_MODULE === false
+      ? `==> Maven 全量依赖：install -pl ${m?.module === 'all' ? '.' : 'wealth-' + mod} -am`
+      : `==> Maven 只构建当前模块：install -pl ${m?.module === 'all' ? '.' : 'wealth-' + mod}（不带 -am）`))
     out.push(L(0.19, '[INFO] Scanning for projects...'))
-    out.push(L(0.24, '[INFO] Reactor Build Order: wealth-common, wealth-api, wealth-' + mod))
+    if (p.ONLY_CURRENT_MODULE === false) {
+      out.push(L(0.24, '[INFO] Reactor Build Order: wealth-common, wealth-api, wealth-' + mod))
+    } else {
+      out.push(L(0.24, '[INFO] Building wealth-' + mod))
+    }
     out.push(L(0.3, '[INFO] --- maven-compiler-plugin:3.13.0:compile (default-compile) @ wealth-' + mod + ' ---'))
     out.push(L(0.36, '[INFO] Compiling 214 source files with javac [debug release 21] to target/classes'))
     if (b.willFail) {
@@ -316,6 +324,7 @@ function createBuild(job: string, params: BuildParams, opts: { startedAt?: numbe
       sha: finalSha,
       canCompare: true,
       timestamp: b.startedAt,
+      durationMs: 0,
       result: null,
       building: true,
       mode: 'build-deploy',
@@ -358,8 +367,11 @@ function stagesOf(b: MockBuild, e: number, state: BuildState): StageInfo[] {
     else if (state === 'success' || e >= s1 * b.plan) st = 'done'
     else if (e >= s0 * b.plan && state !== 'queued') st = failed ? 'failed' : 'running'
     else st = 'pending'
-    // 失败后，失败阶段之后保持 pending
-    return { key: s.key, label: s.label, state: st }
+    const origin = b.startedAt + b.queueMs
+    const startedAt = st === 'pending' || skipped ? undefined : origin + Math.round(s0 * b.plan)
+    const durationMs =
+      startedAt === undefined ? undefined : Math.max(0, Math.min(e, Math.round(s1 * b.plan)) - Math.round(s0 * b.plan))
+    return { key: s.key, label: s.label, state: st, startedAt, durationMs }
   })
 }
 
@@ -395,6 +407,7 @@ function settleAll(): void {
     if (item) {
       item.building = false
       item.result = result
+      item.durationMs = Math.max(0, snapshot(b).e)
     }
     lastBuilds.set(b.job, { number: b.number, result, building: false, at: b.startedAt })
     if (result === 'SUCCESS') runningTag.set(b.job, b.imageTag)
@@ -409,7 +422,7 @@ function ensureSeed(): void {
   // 电商前端正在构建中：让左侧出现琥珀色脉冲点
   createBuild(
     'wealth-ecommerce-web',
-    { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'dev', GIT_SHA: '', SKIP_MVN: false },
+    { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'dev', GIT_SHA: '', SKIP_MVN: false, ONLY_CURRENT_MODULE: true },
     { startedAt: Date.now() - 6000, plan: 70000, forceOk: true },
   )
 }
@@ -457,6 +470,7 @@ function materializeHistory(job: string, number: number): MockBuild | undefined 
     BRANCH: h.branch,
     GIT_SHA: h.sha,
     SKIP_MVN: false,
+    ONLY_CURRENT_MODULE: true,
   }
   const failed = h.result === 'FAILURE'
   const aborted = h.result === 'ABORTED'
@@ -523,8 +537,13 @@ export const mockApi: JenkinsApi = {
 
   async getJobParams(job: string): Promise<ParamDef[]> {
     await delay(80, 200)
-    const repo = MODULES.find((m) => m.job === job)?.repo ?? 'wealth-freedom'
-    return PARAM_DEFS.map((d) => (d.name === 'BRANCH' ? { ...d, choices: branchesOf(repo) } : { ...d }))
+    const m = MODULES.find((x) => x.job === job)
+    const repo = m?.repo ?? 'wealth-freedom'
+    return PARAM_DEFS.filter((d) => {
+      if ((d.name === 'SKIP_MVN' || d.name === 'ONLY_CURRENT_MODULE') && !m?.java) return false
+      if (d.name === 'ONLY_CURRENT_MODULE' && job === 'wealth-all') return false
+      return true
+    }).map((d) => (d.name === 'BRANCH' ? { ...d, choices: branchesOf(repo) } : { ...d }))
   },
 
   async listBranches(repo: string): Promise<string[]> {

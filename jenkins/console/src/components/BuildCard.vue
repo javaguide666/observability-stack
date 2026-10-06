@@ -7,6 +7,7 @@ import BranchPicker from './BranchPicker.vue'
 import CommitResolver from './CommitResolver.vue'
 import HistoryTimeline from './HistoryTimeline.vue'
 import ParamFields from './ParamFields.vue'
+import ConfirmBuildDialog from './ConfirmBuildDialog.vue'
 import RollbackDialog from './RollbackDialog.vue'
 import StatusDot from './StatusDot.vue'
 
@@ -20,9 +21,17 @@ const flowOptions = computed(() => [
 const isProd = computed(() => c.overlay === 'prod')
 const submitLabel = computed(() => (isProd.value ? '开始构建部署（PROD）' : '开始构建部署'))
 
-async function submit() {
+const confirmOpen = ref(false)
+function askBuild() {
+  if (c.submitBlock || c.isBuilding || c.submitting) return
+  confirmOpen.value = true
+}
+async function confirmBuild() {
   const ok = await c.submitBuild()
-  if (ok) ElMessage.success({ message: '已提交到 Jenkins', duration: 2000 })
+  if (ok) {
+    confirmOpen.value = false
+    ElMessage.success({ message: '已提交到 Jenkins', duration: 2000 })
+  }
 }
 
 /* 回滚确认 */
@@ -116,7 +125,7 @@ async function confirmRollback() {
           class="submit"
           :loading="c.submitting"
           :disabled="!!c.submitBlock || c.isBuilding"
-          @click="submit"
+          @click="askBuild"
         >
           <el-icon v-if="!c.submitting"><CaretRight /></el-icon>{{ submitLabel }}
         </el-button>
@@ -143,6 +152,7 @@ async function confirmRollback() {
       </div>
     </template>
 
+    <ConfirmBuildDialog v-model="confirmOpen" :busy="c.submitting" @confirm="confirmBuild" />
     <RollbackDialog v-model="dialogOpen" :item="target" :busy="c.submitting" @confirm="confirmRollback" />
   </section>
 </template>

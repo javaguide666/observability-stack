@@ -55,6 +55,15 @@ function statusClass(h: HistoryItem): string {
   if (h.building) return 'building'
   return h.result === 'SUCCESS' ? 'ok' : h.result === 'FAILURE' || h.result === 'ABORTED' ? 'bad' : 'idle'
 }
+
+function durationSec(h: HistoryItem): number {
+  const ms = h.building ? Date.now() - h.timestamp : h.durationMs
+  return Math.max(0, Math.round(ms / 1000))
+}
+function costLabel(h: HistoryItem): string {
+  const s = durationSec(h)
+  return s > 0 ? `耗时：${s}S` : ''
+}
 </script>
 
 <template>
@@ -100,7 +109,10 @@ function statusClass(h: HistoryItem): string {
         <div class="body">
           <div class="top">
             <code class="tag" :title="h.imageTag">{{ h.imageTag || '（无 tag）' }}</code>
-            <span class="when">构建 #{{ h.number }} · {{ fullTime(h.timestamp) }}</span>
+            <span class="when">
+              构建 #{{ h.number }} · {{ fullTime(h.timestamp) }}
+              <span v-if="costLabel(h)" class="cost">{{ costLabel(h) }}</span>
+            </span>
             <span v-if="h.running" class="pill run" title="推断：该环境最近一次成功构建的版本；手工 kubectl 变更不会反映"><i />运行中（推断）</span>
             <span v-else class="pill" :class="statusClass(h)">{{ statusText(h) }}</span>
           </div>
@@ -262,6 +274,11 @@ function statusClass(h: HistoryItem): string {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-left: 30px;
+}
+.cost {
+  margin-left: 8px;
+  color: var(--wc-text);
+  font-weight: 600;
 }
 .pill {
   flex: none;

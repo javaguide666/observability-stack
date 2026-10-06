@@ -33,11 +33,12 @@ ONESHOT_SERVICES="nacos-init clickvisual-init"
 expand_group() {
   case "$1" in
     core) echo "mysql redis nacos" ;;
-    logging|log) echo "clickhouse loki clickvisual" ;;
+    logging|log) echo "clickhouse loki grafana" ;;
     metrics) echo "prometheus" ;;
+    observability|observe) echo "clickhouse loki prometheus grafana" ;;
     monitor) echo "skywalking prometheus grafana" ;;
     ci) echo "jenkins" ;;
-    full|all) echo "mysql redis postgres nacos skywalking clickhouse loki prometheus grafana clickvisual jenkins" ;;
+    full|all) echo "mysql redis postgres nacos skywalking clickhouse loki prometheus grafana jenkins" ;;
     *) echo "$1" ;;
   esac
 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CI 用 Maven 配置：central 走阿里云。
+     原因：当前网络劫持 repo.maven.apache.org 的 HTTPS（自签证书 O=redirect-cnzz），Java 正确地拒绝了它。
+     不要把劫持证书导入 JDK cacerts。上 Nexus 后新建 settings-nexus.xml，只改 env 文件里的 MAVEN_SETTINGS。 -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>aliyun-public</id>
+      <mirrorOf>central</mirrorOf>
+      <name>Aliyun Maven Public</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>

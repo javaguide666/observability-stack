@@ -4,11 +4,8 @@
 # 单独启动（未启动的数据源会显示异常）：
 #   docker compose -f docker-compose.grafana.yml up -d
 #
-# 服务器核心指标（Prometheus 先起，看板在文件夹「服务器」）：
-#   docker compose -f docker-compose.prometheus.yml -f docker-compose.grafana.yml up -d
-#
-# 与日志栈一起（日志先要有 ClickHouse）：
-#   docker compose -f docker-compose.clickhouse.yml -f docker-compose.loki.yml -f docker-compose.grafana.yml up -d
+# 日志 + 服务器指标一次拉起（推荐）：
+#   docker compose -f docker-compose.observability.yml up -d
 # ============================================================
 name: obs-stack
 
@@ -21,7 +18,7 @@ services:
       - "${GRAFANA_PORT:-3002}:3000"   # 本机唯一 Grafana：Loki 日志 + Prometheus 指标。容器内仍是 3000，宿主默认 3002
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-Admin13278@}
       GF_USERS_ALLOW_SIGN_UP: "false"
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-Admin13278}

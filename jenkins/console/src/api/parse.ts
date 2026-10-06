@@ -113,6 +113,42 @@ export interface StageHint {
   /** 结构化模式下，本轮（本模块 / 本次脚本执行）各阶段是否出现过、是否带 SKIPPED */
   seen?: boolean[]
   skipped?: boolean[]
+  /** 各阶段首次 STAGE 行的 epoch ms；Resolve source 与 CI+CD 共用，换模块才清零 */
+  startedAt?: number[]
+  /** 下一阶段开始或「完成」行的 epoch ms */
+  endedAt?: number[]
+}
+
+function emptyTimes(): number[] {
+  return [0, 0, 0, 0]
+}
+
+/** 行首 `[2026-10-05T23:09:22.849Z]` → epoch；没有时间戳则 undefined */
+export function lineTimeMs(line: string): number | undefined {
+  const m = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/)
+  if (!m) return undefined
+  const t = Date.parse(m[1])
+  return Number.isNaN(t) ? undefined : t
+}
+
+function stampTimes(prev: StageHint | undefined, idx: number, ts: number | undefined, newModule: boolean): { startedAt: number[]; endedAt: number[] } {
+  const startedAt = !prev || newModule ? emptyTimes() : [...(prev.startedAt ?? emptyTimes())]
+  const endedAt = !prev || newModule ? emptyTimes() : [...(prev.endedAt ?? emptyTimes())]
+  if (!ts) return { startedAt, endedAt }
+  if (!startedAt[idx]) startedAt[idx] = ts
+  for (let j = 0; j < idx; j++) {
+    if (startedAt[j] && !endedAt[j]) endedAt[j] = ts
+  }
+  return { startedAt, endedAt }
+}
+
+function closeOpenStages(hint: StageHint, ts: number): number[] {
+  const startedAt = hint.startedAt ?? emptyTimes()
+  const endedAt = [...(hint.endedAt ?? emptyTimes())]
+  for (let j = 0; j < 4; j++) {
+    if (startedAt[j] && !endedAt[j]) endedAt[j] = ts
+  }
+  return endedAt
 }
 
 const STAGE_KEYS = ['checkout', 'build', 'push', 'deploy'] as const
@@ -183,7 +219,9 @@ const MARKERS: { idx: number; re: RegExp }[] = [
 export function updateHint(prev: StageHint | undefined, lines: string[]): StageHint | undefined {
   let hint = prev
   for (const line of lines) {
-    const done = /==> (完成|wealth-all 全部完成)/.test(line) || (hint?.done ?? false)
+    const ts = lineTimeMs(line)
+    const doneMark = /==> (完成|wealth-all 全部完成)/.test(line)
+    const done = doneMark || (hint?.done ?? false)
     // 1) 结构化 STAGE 行优先
     const st = parseStageLine(line)
     if (st) {
@@ -194,6 +232,8 @@ export function updateHint(prev: StageHint | undefined, lines: string[]): StageH
       const skipped = restart ? [false, false, false, false] : [...(old!.skipped as boolean[])]
       seen[st.idx] = true
       skipped[st.idx] = st.skipped
+      const newModule = !old || st.module !== old.module
+      const { startedAt, endedAt } = stampTimes(hint, st.idx, ts, newModule)
       hint = {
         idx: st.idx,
         pushSeen: seen[2] && !skipped[2],
@@ -202,12 +242,15 @@ export function updateHint(prev: StageHint | undefined, lines: string[]): StageH
         module: st.module,
         seen,
         skipped,
+        startedAt,
+        endedAt,
       }
       continue
     }
     // 2) 已进入结构化模式后，不再用旧关键字改阶段（只记完成标记）
     if (hint?.structured) {
-      if (done !== hint.done) hint = { ...hint, done }
+      if (doneMark && ts) hint = { ...hint, done: true, endedAt: closeOpenStages(hint, ts) }
+      else if (done !== hint.done) hint = { ...hint, done }
       continue
     }
     // 3) 兜底：旧的 `==> ` 关键字
@@ -220,7 +263,14 @@ export function updateHint(prev: StageHint | undefined, lines: string[]): StageH
 
 export type StageBuildState = 'queued' | 'running' | 'success' | 'failure' | 'aborted'
 
-export function inferStages(hint: StageHint | undefined, state: StageBuildState, mode: Mode): StageInfo[] {
+function withStageTime(i: number, st: StageState, hint: StageHint | undefined, now: number): Pick<StageInfo, 'startedAt' | 'durationMs'> {
+  const start = hint?.startedAt?.[i] ?? 0
+  if (!start || st === 'pending' || st === 'skipped') return {}
+  const end = hint?.endedAt?.[i] ?? 0
+  return { startedAt: start, durationMs: Math.max(0, (end || now) - start) }
+}
+
+export function inferStages(hint: StageHint | undefined, state: StageBuildState, mode: Mode, now = Date.now()): StageInfo[] {
   // 结构化：以脚本输出为准（含 SKIPPED），不再按 MODE 猜
   if (hint?.structured && hint.seen && hint.skipped) {
     const { seen, skipped } = hint
@@ -234,7 +284,7 @@ export function inferStages(hint: StageHint | undefined, state: StageBuildState,
       else if (i < cur) st = seen[i] ? 'done' : 'skipped'
       else if (i === cur) st = state === 'running' ? 'running' : 'failed'
       else st = 'pending'
-      return { key: s.key, label: s.label, state: st }
+      return { key: s.key, label: s.label, state: st, ...withStageTime(i, st, hint, now) }
     })
   }
 
@@ -251,6 +301,6 @@ export function inferStages(hint: StageHint | undefined, state: StageBuildState,
     else if (i < active) st = i === 2 && !pushSeen ? 'skipped' : 'done'
     else if (i === active) st = state === 'running' ? 'running' : 'failed'
     else st = 'pending'
-    return { key, label: s.label, state: st }
+    return { key, label: s.label, state: st, ...withStageTime(i, st, hint, now) }
   })
 }

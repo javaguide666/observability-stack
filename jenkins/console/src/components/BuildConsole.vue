@@ -3,7 +3,8 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, ApiError, type BuildParams } from '@/api'
 import { useConsole, type ActiveBuild } from '@/composables/useConsole'
-import { formatDuration } from '@/utils/format'
+import { splitLogLine } from '@/utils/logline'
+import { clockTime, formatDuration } from '@/utils/format'
 
 const c = useConsole()
 const archive = ref<ActiveBuild | null>(null)
@@ -38,6 +39,9 @@ const stateKind = computed(() => {
   return s === 'success' ? 'ok' : s === 'failure' || s === 'aborted' ? 'bad' : 'run'
 })
 const finished = computed(() => ['success', 'failure', 'aborted'].includes(st.value?.state ?? ''))
+const shownLines = computed(() =>
+  (a.value?.lines ?? []).map((raw, i) => ({ i, ...splitLogLine(raw) })).filter((row) => row.text || row.time),
+)
 const barStatus = computed(() => (st.value?.state === 'success' ? 'success' : st.value?.state === 'failure' ? 'exception' : undefined))
 const barColor = computed(() => (st.value?.state === 'aborted' ? 'var(--wc-warn)' : ''))
 
@@ -84,6 +88,7 @@ const BLANK_PARAMS: BuildParams = {
   BRANCH: '',
   GIT_SHA: '',
   SKIP_MVN: false,
+  ONLY_CURRENT_MODULE: true,
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -237,6 +242,10 @@ async function onStop(): Promise<void> {
             <i v-else />
           </span>
           <span class="lbl">{{ s.label }}<em v-if="s.state === 'skipped'" class="sk">已跳过</em></span>
+          <span v-if="s.durationMs != null" class="when">
+            <time v-if="s.startedAt">{{ clockTime(s.startedAt) }}</time>
+            {{ formatDuration(s.durationMs) }}
+          </span>
         </li>
       </ol>
 
@@ -271,8 +280,10 @@ async function onStop(): Promise<void> {
       </div>
 
       <div v-show="!collapsed" ref="logEl" class="log" tabindex="0" aria-label="构建日志" role="log">
-        <div v-if="!a.lines.length" class="line muted">等待日志…</div>
-        <div v-for="(l, i) in a.lines" :key="i" class="line" :class="lineClass(l)">{{ l }}</div>
+        <div v-if="!shownLines.length" class="line muted">等待日志…</div>
+        <div v-for="row in shownLines" :key="row.i" class="line" :class="lineClass(row.text)">
+          <time v-if="row.time" class="ts">{{ row.time }}</time>{{ row.text }}
+        </div>
         <div v-if="st?.state === 'running'" class="cursor">▌</div>
       </div>
 
@@ -562,6 +573,13 @@ async function onStop(): Promise<void> {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.ts {
+  display: inline-block;
+  min-width: 8.2em;
+  margin-right: 8px;
+  color: var(--wc-muted);
+  font-variant-numeric: tabular-nums;
+}
 .line.step {
   color: var(--wc-accent);
   font-weight: 600;
@@ -599,5 +617,16 @@ async function onStop(): Promise<void> {
   font-style: normal;
   font-size: 11px;
   color: var(--wc-muted);
+}
+.when {
+  font-family: var(--wc-font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--wc-muted);
+  text-align: center;
+}
+.when time {
+  display: block;
+  font-variant-numeric: tabular-nums;
 }
 </style>

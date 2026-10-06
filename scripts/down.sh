@@ -11,6 +11,7 @@ for c in $rev; do
   f="$(comp_file "$c")"
   echo "==> 停止 $c"
   extra=(); [[ "$c" == "loki" ]] && extra=(--profile logs)
+  [[ "$c" == "clickvisual" ]] && extra=(--profile clickvisual)
   dc "$f" ${extra[@]+"${extra[@]}"} down
 done
 echo "完成。数据目录保留：$(envget DOCKER_DATA_DIR ./data)（需清空请手动删除该目录下对应子目录）"

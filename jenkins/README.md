@@ -16,7 +16,8 @@
 - `scripts/pipeline-wealth-module.sh` — 单模块构建 + `kubectl set image`（可选 `REGISTRY=` 推仓库）
 - `scripts/pipeline-wealth-all.sh` — 顺序跑 7 个模块
 - `scripts/resolve-commit.sh` — 只读 Job `wealth-resolve-commit`：按 40 位 SHA 反查所属分支，产物 `resolve.json`（见 obsidian-doc §17.7）
-- `scripts/list-wealth-tags.sh` — 列出本机 wealth 镜像 tag
+- `scripts/install-ci-tools.sh` — 构建 Jenkins 镜像时下载 docker / buildx / kubectl / maven（国内镜像 + 缓存）
+- `scripts/prefetch-ci-tools.sh` — 可选：在宿主机预下载到 `jenkins/cache/`
 - `scripts/install-wealth-ui.sh` — 安装/刷新 Wealth CI 控制台到 Jenkins userContent
 
 种子：`job-seed/modules/`  

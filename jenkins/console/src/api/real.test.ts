@@ -145,6 +145,22 @@ describe('日志阶段推断', () => {
     expect(inferStages(updateHint(undefined, ['==> docker build x']), 'failure', 'build-deploy').map((s) => s.state)).toEqual(['done', 'failed', 'pending', 'pending'])
     expect(inferStages(undefined, 'queued', 'build-deploy').every((s) => s.state === 'pending')).toBe(true)
   })
+
+  it('从 STAGE 行的时间戳算出各阶段耗时；Resolve source 与 CI+CD 共用第一次 checkout', () => {
+    const lines = [
+      '[2026-10-05T23:09:22.000Z] ==> STAGE 1/4 checkout',
+      '[2026-10-05T23:10:11.000Z] ==> STAGE 1/4 checkout',
+      '[2026-10-05T23:10:12.000Z] ==> STAGE 2/4 build',
+      '[2026-10-05T23:12:52.000Z] ==> STAGE 3/4 push',
+      '[2026-10-05T23:13:38.000Z] ==> STAGE 4/4 deploy',
+      '[2026-10-05T23:16:22.000Z] ==> 完成 MODE=build-deploy MODULE=gateway IMAGE_TAG=main-08447b8',
+    ]
+    const h = updateHint(undefined, lines)
+    const stages = inferStages(h, 'success', 'build-deploy', Date.parse('2026-10-05T23:17:17.000Z'))
+    expect(stages.map((s) => s.durationMs)).toEqual([50_000, 160_000, 46_000, 164_000])
+    expect(stages[0].startedAt).toBe(Date.parse('2026-10-05T23:09:22.000Z'))
+    expect(stages[1].startedAt).toBe(Date.parse('2026-10-05T23:10:12.000Z'))
+  })
 })
 
 /* ───────────── 登录 / 错误分类 ───────────── */
@@ -232,7 +248,7 @@ describe('crumb', () => {
     match: 'GET /job/wealth-gateway/api/json',
     handler: () => jsonRes({ property: [{ parameterDefinitions: [defOf('MODE', 'ChoiceParameterDefinition', ['build-deploy', 'rollback']), defOf('BRANCH', 'ChoiceParameterDefinition', ['main']), defOf('IMAGE_TAG', 'StringParameterDefinition')] }] }),
   })
-  const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'main', GIT_SHA: '', SKIP_MVN: false }
+  const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'main', GIT_SHA: '', SKIP_MVN: false, ONLY_CURRENT_MODULE: true }
 
   it('crumb 被缓存：连续两次 POST 只取一次，并带上 crumbRequestField 头', async () => {
     installFetch([crumbRoute('c-1'), paramsRoute(), okQueue])
@@ -455,6 +471,17 @@ describe('getBuildLog（progressiveText 增量）', () => {
     expect((await realApi.getBuildLog('j', 1, 0)).lines).toEqual(['ok', 'tail'])
   })
 
+  it('去掉 Timestamper 隐藏书签，保留行首时间', async () => {
+    const raw = '[2026-10-05T23:09:22.849Z] ==> STAGE 1/4 checkout\nStarted by user \u001b[8mha:////abc\u001b[0m\n'
+    installFetch([
+      { match: 'GET /job/j/2/logText', handler: () => new Response(raw, { status: 200, headers: { 'X-Text-Size': '80', 'X-More-Data': 'false' } }) },
+    ])
+    expect((await realApi.getBuildLog('j', 2, 0)).lines).toEqual([
+      '[2026-10-05T23:09:22.849Z] ==> STAGE 1/4 checkout',
+      'Started by user ',
+    ])
+  })
+
   it('日志里的 ==> 标记驱动 getBuildStatus 的阶段', async () => {
     installFetch([
       { match: 'GET /job/wealth-gateway/5/logText', handler: () => new Response('[t] ==> checkout x\n[t] ==> docker build wealth-gateway:t\n', { status: 200, headers: { 'X-Text-Size': '60', 'X-More-Data': 'true' } }) },
@@ -508,8 +535,9 @@ describe('参数定义与触发', () => {
     defOf('BRANCH', 'ChoiceParameterDefinition', ['main', 'dev']),
     defOf('GIT_SHA', 'StringParameterDefinition'),
     defOf('SKIP_MVN', 'BooleanParameterDefinition', undefined, false),
+    defOf('ONLY_CURRENT_MODULE', 'BooleanParameterDefinition', undefined, true),
   ]
-  const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'dev', GIT_SHA: '', SKIP_MVN: true }
+  const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'dev', GIT_SHA: '', SKIP_MVN: true, ONLY_CURRENT_MODULE: true }
   const defs = moduleDefs.map((d) => ({ ...d }) as unknown as RawParamDef).map(toDef)
 
   interface RawParamDef { name: string; type: string; description: string; defaultParameterValue: { value: string | boolean }; choices?: string[] }
@@ -541,10 +569,11 @@ describe('参数定义与触发', () => {
   })
 
   it('buildFormFor：只传 Job 定义里存在的参数（前端模块没有 SKIP_MVN）', () => {
-    const webDefs = defs.filter((d) => d.name !== 'SKIP_MVN')
+    const webDefs = defs.filter((d) => d.name !== 'SKIP_MVN' && d.name !== 'ONLY_CURRENT_MODULE')
     const { form } = buildFormFor('wealth-freedom-web', webDefs, P)
     expect(Object.keys(form).sort()).toEqual(['BRANCH', 'GIT_SHA', 'IMAGE_TAG', 'MODE', 'OVERLAY', 'REGISTRY', 'SOURCE'])
     expect(buildFormFor('wealth-gateway', defs, P).form.SKIP_MVN).toBe('true')
+    expect(buildFormFor('wealth-gateway', defs, P).form.ONLY_CURRENT_MODULE).toBe('true')
   })
 
   it('buildFormFor：指定 commit 传完整小写 GIT_SHA；wealth-all 不传', () => {
@@ -554,7 +583,7 @@ describe('参数定义与触发', () => {
 
   it('buildFormFor：回滚 = MODE=rollback + IMAGE_TAG，不带 SHA/SKIP_MVN=true；缺 tag 报错', () => {
     const { form } = buildFormFor('wealth-gateway', defs, { ...P, MODE: 'rollback', IMAGE_TAG: 'main-aaaaaaa', GIT_SHA: SHA, SKIP_MVN: true, BRANCH: 'feature/gone' })
-    expect(form).toMatchObject({ MODE: 'rollback', IMAGE_TAG: 'main-aaaaaaa', GIT_SHA: '', SKIP_MVN: 'false', BRANCH: 'main' })
+    expect(form).toMatchObject({ MODE: 'rollback', IMAGE_TAG: 'main-aaaaaaa', GIT_SHA: '', SKIP_MVN: 'false', ONLY_CURRENT_MODULE: 'false', BRANCH: 'main' })
     expect(() => buildFormFor('wealth-gateway', defs, { ...P, MODE: 'rollback', IMAGE_TAG: 'auto' })).toThrow(/IMAGE_TAG/)
   })
 
@@ -647,9 +676,10 @@ describe('getJobs / listHistory', () => {
     expect(h.map((x) => x.number)).toEqual([9, 8, 7, 6, 5, 4])
 
     const by = (n: number) => h.find((x) => x.number === n)!
-    expect(by(9)).toMatchObject({ building: true, running: false, sha: SHA, canCompare: true, imageTag: 'dev-aaaaaaa' })
+    expect(by(9)).toMatchObject({ building: true, running: false, sha: SHA, canCompare: true, imageTag: 'dev-aaaaaaa', durationMs: 0 })
     expect(by(7)).toMatchObject({ running: false, overlay: 'test' }) // 不是 dev 环境，不算 dev 的“运行中”
     expect(by(6)).toMatchObject({ running: true, sha: '', canCompare: false, mode: 'rollback', imageTag: 'main-ddddddd', branch: 'main' })
+    expect(by(8)).toMatchObject({ durationMs: 1 })
     expect(by(5)).toMatchObject({ running: false, sha: '', canCompare: false, imageTag: 'main-eeeeeee', branch: 'main' })
     expect(by(4)).toMatchObject({ imageTag: '', canCompare: false })
     expect(h.filter((x) => x.running)).toHaveLength(1)
@@ -793,7 +823,7 @@ describe('meta.json 作为分支来源', () => {
       { match: 'GET /job/wealth-gateway/api/json', handler: () => jsonRes({ property: [{ parameterDefinitions: defsStr }] }) },
       { match: 'POST /job/wealth-gateway/buildWithParameters', handler: () => new Response('', { status: 201, headers: { Location: '/queue/item/5/' } }) },
     ])
-    const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'feature/not-in-any-list', GIT_SHA: '', SKIP_MVN: false }
+    const P: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'feature/not-in-any-list', GIT_SHA: '', SKIP_MVN: false, ONLY_CURRENT_MODULE: true }
     const r = await realApi.triggerBuild('wealth-gateway', P)
     expect(r.notice).toBeUndefined()
     expect(new URLSearchParams(callsTo('POST /job/wealth-gateway')[0].body).get('BRANCH')).toBe('feature/not-in-any-list')
@@ -803,7 +833,7 @@ describe('meta.json 作为分支来源', () => {
     const defsChoice = [defOf('BRANCH', 'ChoiceParameterDefinition', ['main', 'dev'])].map((d) => ({
       name: d.name as string, type: 'choice' as const, description: '', defaultValue: 'main', choices: ['main', 'dev'],
     }))
-    const base: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'feature/x', GIT_SHA: '', SKIP_MVN: false }
+    const base: BuildParams = { MODE: 'build-deploy', OVERLAY: 'dev', SOURCE: 'github', IMAGE_TAG: 'auto', REGISTRY: '', BRANCH: 'feature/x', GIT_SHA: '', SKIP_MVN: false, ONLY_CURRENT_MODULE: true }
     expect(() => buildFormFor('wealth-gateway', defsChoice, base)).toThrow(/刷新分支/)
     expect(buildFormFor('wealth-gateway', defsChoice, { ...base, GIT_SHA: SHA }).notice).toBeTruthy()
     const defsString: ParamDef[] = [{ name: 'BRANCH', type: 'string', description: '', defaultValue: 'main' }]

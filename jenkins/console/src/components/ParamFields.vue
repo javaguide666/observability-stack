@@ -34,6 +34,13 @@ const registryTip = computed(() => tip('REGISTRY', '镜像仓库前缀。本机 
     </div>
   </div>
 
+  <div v-if="showSkip && c.current.java && c.current.supportsCommit" class="only-mod">
+    <el-checkbox v-model="c.onlyCurrentModule" :disabled="c.skipMvn">只构建当前模块</el-checkbox>
+    <p class="hint">
+      默认勾选：Maven 只打包本模块，依赖用本地已 install 的 jar。取消勾选则连同 common 等一起全量编译。
+    </p>
+  </div>
+
   <div class="advanced">
     <button type="button" class="adv-toggle" :aria-expanded="c.registryOpen" @click="c.registryManualOpen = !c.registryManualOpen">
       <el-icon class="chev" :class="{ open: c.registryOpen }"><ArrowRight /></el-icon>
@@ -70,6 +77,15 @@ const registryTip = computed(() => tip('REGISTRY', '镜像仓库前缀。本机 
 }
 .col {
   min-width: 0;
+}
+.only-mod {
+  margin-top: 16px;
+}
+.only-mod .hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--wc-muted);
+  line-height: 1.5;
 }
 .advanced {
   margin-top: 16px;
